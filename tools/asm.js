@@ -71,7 +71,7 @@ const OP = {
   'fence.i': { fmt: 'sys', code: 0x0F }
 };
 
-const PSEUDO = new Set(['nop', 'li', 'la', 'mv', 'not', 'neg', 'ret', 'j', 'jr', 'call', 'beqz', 'bnez', 'blez', 'bgez', 'bltz', 'bgtz', 'csrr', 'csrw', 'csrs', 'csrc', 'csrwi', 'csrsi', 'csrci', 'rdcycle', 'rdtime', 'rdinstret']);
+const PSEUDO = new Set(['nop', 'li', 'la', 'mv', 'not', 'neg', 'ret', 'j', 'jr', 'call', 'beqz', 'bnez', 'blez', 'bgez', 'bltz', 'bgtz', 'bgt', 'ble', 'bgtu', 'bleu', 'csrr', 'csrw', 'csrs', 'csrc', 'csrwi', 'csrsi', 'csrci', 'rdcycle', 'rdtime', 'rdinstret']);
 
 // ---------------- lexer ----------------
 
@@ -447,6 +447,18 @@ function assemble(src, opts = {}) {
         else if (word === 'bgtz') { op = 'blt'; rs1 = 0; rs2 = rs; }
         const target = splitOperandTokens(toks, 1, lineNo);
         const item = { kind: 'inst', size: 4, enc: 0, patch: { type: 'b', op, f3: OP[op].f3, rs1, rs2, tokens: target, lineNo } };
+        emit(item); return;
+      }
+      case 'bgt': case 'ble': case 'bgtu': case 'bleu': {
+        const rs1 = reg();
+        const rs2 = expectReg(toks[1], lineNo);
+        let op, r1, r2;
+        if (word === 'bgt') { op = 'blt'; r1 = rs2; r2 = rs1; }
+        else if (word === 'ble') { op = 'bge'; r1 = rs2; r2 = rs1; }
+        else if (word === 'bgtu') { op = 'bltu'; r1 = rs2; r2 = rs1; }
+        else if (word === 'bleu') { op = 'bgeu'; r1 = rs2; r2 = rs1; }
+        const target = splitOperandTokens(toks, 2, lineNo);
+        const item = { kind: 'inst', size: 4, enc: 0, patch: { type: 'b', op, f3: OP[op].f3, rs1: r1, rs2: r2, tokens: target, lineNo } };
         emit(item); return;
       }
       case 'li': {

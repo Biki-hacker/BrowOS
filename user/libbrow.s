@@ -18,9 +18,18 @@
 .global unlink
 .global exec
 .global halt
+.global fork
+.global pipe
+.global kill
+.global waitpid
 
 exit:
   li a7, 1
+  ecall
+  ret
+
+fork:
+  li a7, 2
   ecall
   ret
 
@@ -81,6 +90,21 @@ exec:
 
 halt:
   li a7, 15
+  ecall
+  ret
+
+pipe:
+  li a7, 16
+  ecall
+  ret
+
+kill:
+  li a7, 17
+  ecall
+  ret
+
+waitpid:
+  li a7, 18
   ecall
   ret
 

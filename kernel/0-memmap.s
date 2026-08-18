@@ -56,6 +56,15 @@
 .equ SYS_EXEC,     13
 .equ SYS_DUP,      14
 .equ SYS_HALT,     15
+.equ SYS_PIPE,     16
+.equ SYS_KILL,     17
+.equ SYS_WAITPID,  18
+
+# Signal numbers
+.equ SIGINT,       2
+.equ SIGKILL,      9
+.equ SIGTERM,      15
+.equ SIGCHLD,      17
 
 # User Virtual Addresses
 .equ USER_TEXT_VA,  0x40000000

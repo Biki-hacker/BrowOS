@@ -1,10 +1,8 @@
-'use strict';
-
-const { test } = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const { assemble } = require('../tools/asm.js');
 const { readElf, loadSegments } = require('../tools/elf.js');
 const { Bus } = require('../tools/mem.js');
@@ -14,6 +12,8 @@ const { formatDisk } = require('../tools/mkfs.js');
 const { RAM_SIZE } = require('../tools/memmap.js');
 
 const KERNEL_DIR = path.join(__dirname, '..', 'kernel');
+const USER_DIR = path.join(__dirname, '..', 'user');
+
 const KERNEL_PARTS = [
   '0-memmap.s',
   'pmm.s',
@@ -40,41 +40,71 @@ function buildKernel() {
 }
 
 function buildUserProgram(assemblySrc) {
-  return assemble(assemblySrc, { base: 0x40000000 });
+  const libSrc = fs.readFileSync(path.join(USER_DIR, 'libbrow.s'), 'utf8');
+  return assemble(libSrc + '\n' + assemblySrc, { base: 0x40000000 });
 }
 
-test('exec: user program assembled with libbrow loads and executes from BrFS', { timeout: 300000 }, () => {
-  // 1. Build user hello program
+test('signal: parent forks spinning child and terminates it via kill(pid, SIGKILL)', { timeout: 300000 }, () => {
   const userSrc = `
 .text
 .globl _start
 _start:
-  la a0, msg
-  li a7, 6   # SYS_WRITE
-  li a0, 1   # stdout
-  la a1, msg
-  li a2, 16  # length
-  ecall
+  # Fork spinning child: fork()
+  call fork
+  beqz a0, is_child
 
-  # Exit with status 42
-  li a7, 1   # SYS_EXIT
-  li a0, 42
-  ecall
+  # Parent process: a0 = child PID
+  mv s0, a0
+
+  # Send SIGKILL (9) to child
+  mv a0, s0
+  li a1, 9           # SIGKILL
+  call kill
+  bnez a0, fail
+
+  # Wait for killed child: waitpid(child_pid, &status)
+  mv a0, s0
+  la a1, status_val
+  call waitpid
+  bne a0, s0, fail
+
+  # Check status == -9 (killed by SIGKILL)
+  la t0, status_val
+  lw t1, 0(t0)
+  li t2, -9
+  bne t1, t2, fail
+
+  # Print success message to stdout
+  la a0, success_msg
+  call puts
+
+  # Exit 0
+  li a0, 0
+  call exit
+
+is_child:
+  # Child process: infinite spin waiting for signal
+child_loop:
+  j child_loop
+
+fail:
+  li a0, 1
+  call exit
 
 .data
-msg: .ascii "Hello from ELF!\\n"
+.align 4
+status_val:  .word 0
+success_msg: .ascii "SIGNAL_PASS"
+.byte 0
 `;
-  const userElf = buildUserProgram(userSrc);
-  assert.ok(userElf.bytes.length > 0, 'user ELF binary generated');
 
-  // 2. Format disk with user binary as /sh
+  const userElf = buildUserProgram(userSrc);
   const diskBytes = formatDisk(2048, [
     { path: 'sh', content: userElf.bytes },
   ]);
 
-  // 3. Assemble kernel
   const k = buildKernel();
-  const elfPath = path.join(os.tmpdir(), `browos-exec-${process.pid}-${Date.now()}.elf`);
+  const elfPath = path.join(os.tmpdir(), `browos-signal-${process.pid}-${Date.now()}.elf`);
   fs.writeFileSync(elfPath, k.bytes);
   const elfBytes = fs.readFileSync(elfPath);
   const elf = readElf(elfBytes);
@@ -120,6 +150,7 @@ msg: .ascii "Hello from ELF!\\n"
   const cpu = new Cpu(bus, { pc: elf.entry, trace: cpuTrace });
   cpu.run(20000000);
 
-  const uartOut = uart.output();
-  assert.ok(uartOut.includes('Hello from ELF!'), `UART output must contain user program text, got: "${uartOut}"`);
+  const output = uart.output();
+  assert.ok(output.includes('SIGNAL_PASS'), `UART output should contain SIGNAL_PASS, got: ${output}`);
+  assert.strictEqual(tohostValue, 1, 'Kernel must report pass via tohost');
 });

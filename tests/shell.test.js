@@ -23,6 +23,8 @@ const KERNEL_PARTS = [
   'vmm.s',
   'proc.s',
   'sched.s',
+  'signal.s',
+  'pipe.s',
   'syscall.s',
   'trap.s',
   'driver_uart.s',
@@ -130,4 +132,12 @@ test('shell: mkdir and touch filesystem commands work in shell', { timeout: 3000
   const { output, tohost } = runShellSession('mkdir testdir\ntouch testfile\nshutdown\n');
   assert.ok(output.includes('browos$'), 'prompt must be displayed');
   assert.equal(tohost, 1, 'shutdown command must write 1 to tohost');
+});
+
+test('shell: ps and kill command execute in shell', { timeout: 300000 }, () => {
+  const { output, tohost } = runShellSession('ps\nkill 999\nshutdown\n');
+  assert.ok(output.includes('COMMAND'), 'ps output must display process table header');
+  assert.ok(output.includes('sh'), 'ps output must show shell process');
+  assert.ok(output.includes('kill: process not found'), 'kill invalid pid must report error');
+  assert.equal(tohost, 1, 'shutdown command must exit');
 });

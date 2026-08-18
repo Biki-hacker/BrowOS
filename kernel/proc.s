@@ -205,3 +205,193 @@ proc_exit_halt:
   # Loop if nothing left to run
   wfi
   j proc_exit_halt
+
+# sys_fork(): Clones current process into a new child process.
+# Returns child PID in parent, or 0 in child (or -1 on error).
+.global sys_fork
+sys_fork:
+  addi sp, sp, -28
+  sw ra, 24(sp)
+  sw s0, 20(sp)
+  sw s1, 16(sp)
+  sw s2, 12(sp)
+  sw s3, 8(sp)
+  sw s4, 4(sp)
+
+  la t0, current_proc
+  lw s0, 0(t0)        # s0 = parent PCB
+  beqz s0, sys_fork_fail
+
+  # Allocate child PCB
+  call proc_alloc
+  beqz a0, sys_fork_fail
+  mv s1, a0           # s1 = child PCB
+
+  # Set parent_pid
+  lw t1, 4(s0)        # parent.pid
+  sw t1, 12(s1)       # child.parent_pid
+
+  # Create new address space for child
+  call vmm_create_space
+  sw a0, 16(s1)       # child.satp = child_root_pa
+  mv s2, a0           # s2 = child_root_pa
+
+  # Clone user text/data page (0x40000000)
+  call alloc_frame
+  beqz a0, sys_fork_fail
+  mv s3, a0           # s3 = child_text_frame
+  # Copy 4096 bytes from 0x40000000 to child_text_frame
+  mv a0, s3
+  li a1, 0x40000000
+  li a2, 4096
+  call kmemcpy
+  # Map child text frame
+  mv a0, s2           # child_root_pa
+  li a1, USER_TEXT_VA
+  mv a2, s3
+  li a3, 0xDF         # PTE_USER_TEXT (V | R | W | X | U | A | D)
+  call vmm_map_page
+
+  # Clone user stack page (USER_STACK_VA = 0x7FFFF000)
+  call alloc_frame
+  beqz a0, sys_fork_fail
+  mv s4, a0           # s4 = child_stack_frame
+  # Copy 4096 bytes from 0x7FFFF000 to child_stack_frame
+  mv a0, s4
+  li a1, USER_STACK_VA
+  li a2, 4096
+  call kmemcpy
+  # Map child stack frame
+  mv a0, s2           # child_root_pa
+  li a1, USER_STACK_VA
+  mv a2, s4
+  li a3, PTE_USER_DATA # 0xD7
+  call vmm_map_page
+
+  # Duplicate parent's trapframe into child's trapframe
+  lw a1, 28(s0)       # src = parent.tf
+  lw a0, 28(s1)       # dst = child.tf
+  li a2, 144
+  call kmemcpy
+
+  # Child return value: child_tf.a0 = 0 (offset 40)
+  lw t1, 28(s1)       # child.tf
+  sw x0, 40(t1)
+
+  # Mark child RUNNABLE (1)
+  li t2, 1
+  sw t2, 0(s1)
+
+  # Parent returns child PID
+  lw a0, 4(s1)        # child.pid
+  j sys_fork_done
+
+sys_fork_fail:
+  li a0, -1
+
+sys_fork_done:
+  lw s4, 4(sp)
+  lw s3, 8(sp)
+  lw s2, 12(sp)
+  lw s1, 16(sp)
+  lw s0, 20(sp)
+  lw ra, 24(sp)
+  addi sp, sp, 28
+  ret
+
+# sys_waitpid(a0=pid, a1=status_ptr): Waits for child process termination.
+# Returns reaped child PID, or -1.
+.global sys_waitpid
+sys_waitpid:
+  addi sp, sp, -20
+  sw ra, 16(sp)
+  sw s0, 12(sp)
+  sw s1, 8(sp)
+  sw s2, 4(sp)
+  mv s0, a0           # target pid (-1 for any child)
+  mv s1, a1           # status_ptr
+
+sys_wait_loop:
+  la t0, current_proc
+  lw s2, 0(t0)        # s2 = current PCB
+  beqz s2, sys_wait_err
+  lw t1, 4(s2)        # my pid
+
+  # Scan proc_table for matching children
+  la t0, proc_table
+  li t2, 0            # index
+  li t3, 16           # MAX_PROCS
+  li t4, 0            # children found flag
+sys_wait_scan:
+  lw t5, 0(t0)        # pcb.state
+  beqz t5, sys_wait_next
+  lw t6, 12(t0)       # pcb.parent_pid
+  bne t6, t1, sys_wait_next # not my child
+
+  # If specific pid requested, check match
+  li a2, -1
+  beq s0, a2, sys_wait_match
+  lw a3, 4(t0)        # pcb.pid
+  bne a3, s0, sys_wait_next
+
+sys_wait_match:
+  li t4, 1            # found at least one matching child
+  # Check if child is ZOMBIE (4)
+  li a2, 4
+  beq t5, a2, sys_wait_reap
+
+sys_wait_next:
+  addi t0, t0, 40     # PCB_SIZE
+  addi t2, t2, 1
+  blt t2, t3, sys_wait_scan
+
+  # If no children at all -> ECHILD (-1)
+  beqz t4, sys_wait_err
+
+  # Children are still running -> rewind tf.epc by 4 and schedule away
+  lw t0, 28(s2)       # current_proc.tf
+  lw t1, 128(t0)      # tf.epc
+  addi t1, t1, -4     # rewind to ecall
+  sw t1, 128(t0)
+
+  li t3, 1            # PROC_RUNNABLE
+  sw t3, 0(s2)
+  call schedule
+  # Execution will resume via trap_return directly to ecall
+
+sys_wait_reap:
+  # Child at t0 is ZOMBIE! Reap it.
+  lw a0, 4(t0)        # reaped pid
+  lw a2, 32(t0)       # exitcode
+  beqz s1, sys_wait_reap_free
+  sw a2, 0(s1)        # store status to *status_ptr
+sys_wait_reap_free:
+  sw x0, 0(t0)        # free child PCB (state = 0)
+  j sys_wait_done
+
+sys_wait_err:
+  li a0, -1
+
+sys_wait_done:
+  lw s2, 4(sp)
+  lw s1, 8(sp)
+  lw s0, 12(sp)
+  lw ra, 16(sp)
+  addi sp, sp, 20
+  ret
+
+# kmemcpy(a0=dst, a1=src, a2=count): Copies memory bytes in kernel mode.
+.global kmemcpy
+kmemcpy:
+  li t0, 0
+kmemcpy_loop:
+  bge t0, a2, kmemcpy_done
+  add t1, a1, t0
+  lbu t2, 0(t1)
+  add t3, a0, t0
+  sb t2, 0(t3)
+  addi t0, t0, 1
+  j kmemcpy_loop
+kmemcpy_done:
+  ret
+

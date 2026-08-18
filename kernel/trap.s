@@ -112,6 +112,13 @@ trap_do_call:
   mv a0, s0      # a0 = tf
   call trap_handler
 
+  # Check pending signals while on kernel stack
+  la t0, current_proc
+  lw a0, 0(t0)
+  beqz a0, trap_no_sig
+  call sig_check_deliver
+trap_no_sig:
+
   # Restore sp = tf
   mv sp, s0
   j trap_return

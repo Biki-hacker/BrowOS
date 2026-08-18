@@ -13,7 +13,7 @@ syscall_dispatch:
   li t0, 1  # SYS_EXIT
   beq a7, t0, sys_handle_exit
   li t0, 2  # SYS_FORK
-  beq a7, t0, sys_handle_fork
+  beq a7, t0, sys_fork
   li t0, 3  # SYS_YIELD
   beq a7, t0, sys_handle_yield
   li t0, 4  # SYS_SLEEP
@@ -38,6 +38,12 @@ syscall_dispatch:
   beq a7, t0, sys_handle_exec
   li t0, 15 # SYS_HALT
   beq a7, t0, sys_handle_halt
+  li t0, 16 # SYS_PIPE
+  beq a7, t0, sys_pipe
+  li t0, 17 # SYS_KILL
+  beq a7, t0, sys_kill
+  li t0, 18 # SYS_WAITPID
+  beq a7, t0, sys_waitpid
 
   # Unknown syscall
   li a0, -1
@@ -45,11 +51,6 @@ syscall_dispatch:
 
 sys_handle_exit:
   j proc_exit
-
-sys_handle_fork:
-  # Return child PID in parent, or 0 in child (stub returning 0 for now)
-  li a0, 0
-  ret
 
 sys_handle_yield:
   j sys_yield
@@ -85,6 +86,10 @@ sys_handle_write:
   beq a0, t0, sys_write_uart
   li t0, 2
   beq a0, t0, sys_write_uart
+
+  # Check if pipe fd (fd >= 100)
+  li t0, 100
+  bgeu a0, t0, sys_write_pipe
   # Other fds: write to file via BrFS (fd maps directly to inode_no - 3 for simple file fds)
   addi sp, sp, -20
   sw ra, 16(sp)
@@ -134,10 +139,19 @@ sys_write_uart_done:
   addi sp, sp, 12
   ret
 
+sys_write_pipe:
+  # a0 = fd (>= 100), a1 = buf_ptr, a2 = count
+  addi t0, a0, -100
+  srli a0, t0, 1       # pipe_id = (fd - 100) / 2
+  j pipe_write
+
 sys_handle_read:
   # a0 = fd, a1 = buf_ptr, a2 = count
   # For fd 0 (stdin), read from UART
   beqz a0, sys_read_uart
+  # Check if pipe fd (fd >= 100)
+  li t0, 100
+  bgeu a0, t0, sys_read_pipe
   # Other fds: read from file via BrFS
   addi sp, sp, -20
   sw ra, 16(sp)
@@ -160,6 +174,12 @@ sys_handle_read:
   lw ra, 16(sp)
   addi sp, sp, 20
   ret
+
+sys_read_pipe:
+  # a0 = fd (>= 100), a1 = buf_ptr, a2 = count
+  addi t0, a0, -100
+  srli a0, t0, 1       # pipe_id = (fd - 100) / 2
+  j pipe_read
 
 sys_read_uart:
   addi sp, sp, -12
@@ -226,8 +246,15 @@ sys_open_ret:
   ret
 
 sys_handle_close:
+  li t0, 100
+  bgeu a0, t0, sys_close_pipe
   li a0, 0
   ret
+sys_close_pipe:
+  addi t0, a0, -100
+  andi a1, t0, 1       # is_write = (fd - 100) % 2
+  srli a0, t0, 1       # pipe_id = (fd - 100) / 2
+  j pipe_close
 
 sys_handle_stat:
   # a0 = path_ptr, a1 = stat_buf_ptr

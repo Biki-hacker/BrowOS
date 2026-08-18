@@ -20,6 +20,8 @@ const KERNEL_PARTS = [
   'vmm.s',
   'proc.s',
   'sched.s',
+  'signal.s',
+  'pipe.s',
   'syscall.s',
   'trap.s',
   'driver_uart.s',

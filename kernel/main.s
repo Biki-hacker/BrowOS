@@ -266,6 +266,7 @@ kmain_sched_returned:
   la t0, heap_free
   sw x0, 0(t0)
   call vmm_init
+  call pipe_init
 
   # TEST 11: UART transmit and receive
   li s0, 11

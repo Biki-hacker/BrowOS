@@ -222,7 +222,7 @@ sh_try_touch:
   la a1, cmd_touch
   li a2, 5
   call strncmp
-  bnez a0, sh_try_halt
+  bnez a0, sh_try_kill
   addi a0, s0, 5
 sh_touch_sp:
   lbu t0, 0(a0)
@@ -239,6 +239,53 @@ sh_touch_do:
   j sh_loop
 sh_touch_err:
   la a0, str_touch_err
+  call puts
+  j sh_loop
+
+sh_try_kill:
+  # ─── Built-in: kill <pid> ────────────────────────────────────────────
+  mv a0, s0
+  la a1, cmd_kill
+  li a2, 4
+  call strncmp
+  bnez a0, sh_try_halt
+  addi a0, s0, 4
+sh_kill_sp:
+  lbu t0, 0(a0)
+  li t1, ' '
+  bne t0, t1, sh_kill_parse
+  addi a0, a0, 1
+  j sh_kill_sp
+sh_kill_parse:
+  beqz t0, sh_kill_usage
+  li t2, 0         # parsed pid
+sh_kill_digit_loop:
+  lbu t0, 0(a0)
+  beqz t0, sh_kill_do
+  li t1, ' '
+  beq t0, t1, sh_kill_do
+  li t1, '0'
+  blt t0, t1, sh_kill_do
+  li t1, '9'
+  bgt t0, t1, sh_kill_do
+  addi t0, t0, -48
+  li t1, 10
+  mul t2, t2, t1
+  add t2, t2, t0
+  addi a0, a0, 1
+  j sh_kill_digit_loop
+sh_kill_do:
+  mv a0, t2        # pid
+  li a1, 9         # SIGKILL
+  call kill
+  bnez a0, sh_kill_err
+  j sh_loop
+sh_kill_usage:
+  la a0, str_kill_usage
+  call puts
+  j sh_loop
+sh_kill_err:
+  la a0, str_kill_err
   call puts
   j sh_loop
 
@@ -290,6 +337,8 @@ str_cat_notfound:.asciz "cat: file not found"
 str_mkdir_err:   .asciz "mkdir: failed to create directory"
 str_rm_err:      .asciz "rm: failed to remove file"
 str_touch_err:   .asciz "touch: failed to create file"
+str_kill_usage:  .asciz "kill: missing pid argument"
+str_kill_err:    .asciz "kill: process not found"
 str_unknown:     .asciz "sh: command not found: "
 str_halt_msg:    .asciz "System shutting down..."
 
@@ -304,6 +353,7 @@ cmd_cat:      .asciz "cat"
 cmd_mkdir:    .asciz "mkdir"
 cmd_rm:       .asciz "rm"
 cmd_touch:    .asciz "touch"
+cmd_kill:     .asciz "kill"
 cmd_shutdown: .asciz "shutdown"
 cmd_reboot:   .asciz "reboot"
 cmd_exit:     .asciz "exit"
@@ -320,6 +370,7 @@ str_help_text:
   .ascii "  touch     - Create an empty file\n"
   .ascii "  rm        - Remove a file\n"
   .ascii "  ps        - Report current process status\n"
+  .ascii "  kill      - Terminate a process by PID\n"
   .ascii "  uptime    - Show CPU cycle count\n"
   .asciz "  shutdown  - Halt and power off the machine"
 
