@@ -48,6 +48,45 @@
 .equ SYS_GETPID,   5
 .equ SYS_WRITE,    6
 .equ SYS_READ,     7
+.equ SYS_OPEN,     8
+.equ SYS_CLOSE,    9
+.equ SYS_STAT,     10
+.equ SYS_MKDIR,    11
+.equ SYS_UNLINK,   12
+
+# UART 16550A register offsets
+.equ UART_RBR,     0x00
+.equ UART_THR,     0x00
+.equ UART_IER,     0x01
+.equ UART_FCR,     0x02
+.equ UART_LCR,     0x03
+.equ UART_MCR,     0x04
+.equ UART_LSR,     0x05
+.equ UART_MSR,     0x06
+.equ UART_SCR,     0x07
+.equ LSR_DATA_READY, 0x01
+.equ LSR_TX_EMPTY, 0x20
+
+# Block device register offsets
+.equ BLK_STATUS,   0x00
+.equ BLK_COMMAND,  0x04
+.equ BLK_SECTOR,   0x08
+.equ BLK_DMA_ADDR, 0x0C
+.equ BLK_CAPACITY, 0x10
+.equ BLK_SECT_SIZE, 0x14
+.equ BLK_CMD_READ, 1
+.equ BLK_CMD_WRITE, 2
+.equ BLK_SECTOR_SIZE, 512
+
+# BrFS filesystem constants
+.equ BRFS_MAGIC,       0x42524653
+.equ BRFS_BLOCK_SIZE,  4096
+.equ BRFS_SECTS_PER_BLK, 8
+.equ BRFS_MAX_INODES,  128
+.equ BRFS_MAX_DIRECT,  12
+.equ BRFS_INODE_FILE,  1
+.equ BRFS_INODE_DIR,   2
+.equ BRFS_NAME_MAX,    28
 
 # Process states
 .equ PROC_UNUSED,   0

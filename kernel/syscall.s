@@ -65,10 +65,73 @@ sys_getpid_zero:
   ret
 
 sys_handle_write:
-  # Stub returning bytes written
+  # a0 = fd, a1 = buf_ptr, a2 = count
+  # For fd 1 (stdout) or fd 2 (stderr), write to UART
+  li t0, 1
+  beq a0, t0, sys_write_uart
+  li t0, 2
+  beq a0, t0, sys_write_uart
+  # Other fds: return count (stub for now)
   mv a0, a2
   ret
 
+sys_write_uart:
+  # Write a2 bytes from a1 to UART
+  addi sp, sp, -12
+  sw ra, 8(sp)
+  sw s0, 4(sp)
+  sw s1, 0(sp)
+  mv s0, a1       # buf
+  mv s1, a2       # count
+  li t0, 0
+sys_write_uart_loop:
+  bge t0, s1, sys_write_uart_done
+  add t1, s0, t0
+  lbu a0, 0(t1)
+  sw t0, 0(sp)
+  call uart_putc
+  lw t0, 0(sp)
+  addi t0, t0, 1
+  j sys_write_uart_loop
+sys_write_uart_done:
+  mv a0, s1
+  lw s1, 0(sp)
+  lw s0, 4(sp)
+  lw ra, 8(sp)
+  addi sp, sp, 12
+  ret
+
 sys_handle_read:
+  # a0 = fd, a1 = buf_ptr, a2 = count
+  # For fd 0 (stdin), read from UART
+  bnez a0, sys_read_other
+  # Read up to count bytes from UART
+  addi sp, sp, -12
+  sw ra, 8(sp)
+  sw s0, 4(sp)
+  sw s1, 0(sp)
+  mv s0, a1       # buf
+  mv s1, a2       # max count
+  li t0, 0
+sys_read_uart_loop:
+  bge t0, s1, sys_read_uart_done
+  sw t0, 0(sp)
+  call uart_getc
+  lw t0, 0(sp)
+  li t1, -1
+  beq a0, t1, sys_read_uart_done
+  add t2, s0, t0
+  sb a0, 0(t2)
+  addi t0, t0, 1
+  j sys_read_uart_loop
+sys_read_uart_done:
+  mv a0, t0
+  lw s1, 0(sp)
+  lw s0, 4(sp)
+  lw ra, 8(sp)
+  addi sp, sp, 12
+  ret
+
+sys_read_other:
   li a0, 0
   ret

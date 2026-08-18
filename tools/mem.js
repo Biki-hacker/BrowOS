@@ -34,11 +34,15 @@ class Bus {
   }
 
   read8(addr) {
+    const d = this.findDevice(addr, 1);
+    if (d) return d.io.read8 ? d.io.read8(addr) : ((d.io.read32(addr & ~3) >>> ((addr & 3) * 8)) & 0xFF);
     this.check(addr, 1);
     return this.data[(addr >>> 0) - (this.offset >>> 0)];
   }
 
   read16(addr) {
+    const dev = this.findDevice(addr, 2);
+    if (dev) return dev.io.read16 ? dev.io.read16(addr) : ((dev.io.read32(addr & ~3) >>> ((addr & 2) * 8)) & 0xFFFF);
     this.check(addr, 2);
     const d = this.data;
     const p = (addr >>> 0) - (this.offset >>> 0);
@@ -55,11 +59,15 @@ class Bus {
   }
 
   write8(addr, v) {
+    const d = this.findDevice(addr, 1);
+    if (d) { if (d.io.write8) d.io.write8(addr, v); return; }
     this.check(addr, 1);
     this.data[(addr >>> 0) - (this.offset >>> 0)] = v & 0xFF;
   }
 
   write16(addr, v) {
+    const dev = this.findDevice(addr, 2);
+    if (dev) { if (dev.io.write16) dev.io.write16(addr, v); return; }
     this.check(addr, 2);
     const d = this.data;
     const p = (addr >>> 0) - (this.offset >>> 0);

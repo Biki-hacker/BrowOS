@@ -6,7 +6,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { assemble } = require('../tools/asm.js');
-const { runElfBinary } = require('../tools/validate.js');
+const { readElf, loadSegments } = require('../tools/elf.js');
+const { Bus } = require('../tools/mem.js');
+const { Cpu } = require('../tools/cpu.js');
+const { Uart, BlockDevice } = require('../tools/devices.js');
 const { RAM_SIZE } = require('../tools/memmap.js');
 
 const KERNEL_DIR = path.join(__dirname, '..', 'kernel');
@@ -19,8 +22,13 @@ const KERNEL_PARTS = [
   'sched.s',
   'syscall.s',
   'trap.s',
+  'driver_uart.s',
+  'driver_blk.s',
+  'fs.s',
   'main.s',
 ];
+
+const DISK_SECTORS = 2048;
 
 function buildKernel() {
   const src = KERNEL_PARTS
@@ -29,13 +37,76 @@ function buildKernel() {
   return assemble(src);
 }
 
-function bootKernel(maxSteps = 20000000) {
+function bootKernel(maxSteps = 50000000) {
   const r = buildKernel();
   const elfPath = path.join(os.tmpdir(), `browos-sched-${process.pid}-${Date.now()}.elf`);
   fs.writeFileSync(elfPath, r.bytes);
-  const res = runElfBinary(elfPath, { maxSteps, rawBus: true, busSize: RAM_SIZE });
-  try { fs.unlinkSync(elfPath); } catch {}
-  return { r, res };
+  const elfBytes = fs.readFileSync(elfPath);
+  const elf = readElf(elfBytes);
+
+  const bus = new Bus(RAM_SIZE, 0);
+  loadSegments(bus, elfBytes, elf);
+  fs.unlinkSync(elfPath);
+
+  const uart = new Uart();
+  uart.attach(bus);
+  const blk = new BlockDevice(DISK_SECTORS, bus);
+  blk.attach(bus);
+
+  const tohostAddr = elf.symbols['tohost'] ? elf.symbols['tohost'].value : null;
+  let tohostValue = null;
+  let pending = null;
+
+  const cpuTrace = (c, inst) => {
+    if (pending && c.instCount >= pending.resolveStep) {
+      const p = pending;
+      pending = null;
+      if (p.value === 1 || (p.value & 1)) {
+        tohostValue = p.value;
+        c.stop();
+      }
+    }
+  };
+
+  if (tohostAddr !== null) {
+    const origWrite32 = bus.write32.bind(bus);
+    bus.write32 = (addr, v) => {
+      const a = addr >>> 0;
+      if (a === (tohostAddr >>> 0)) {
+        pending = { value: v | 0, resolveStep: cpu.instCount + 8 };
+        return;
+      }
+      const fromhostAddr = (tohostAddr + 4) >>> 0;
+      if (a === fromhostAddr) {
+        const p = pending;
+        pending = null;
+        if (p && (v >>> 0) !== 0x1010000) {
+          tohostValue = p.value;
+          cpu.stop();
+        }
+        return;
+      }
+      origWrite32(addr, v);
+    };
+  }
+
+  const cpu = new Cpu(bus, { pc: elf.entry, trace: cpuTrace });
+  const result = cpu.run(maxSteps);
+
+  const status = tohostValue === 1 ? 'pass' : tohostValue !== null ? 'fail' : 'timeout';
+  return {
+    r,
+    res: {
+      status,
+      tohost: tohostValue,
+      instCount: cpu.instCount,
+      steps: result.instCount,
+      pc: cpu.pc,
+      priv: cpu.priv,
+      halted: result.halted,
+      haltReason: result.reason,
+    },
+  };
 }
 
 test('scheduler: multi-process preemptive scheduling and syscalls pass', { timeout: 300000 }, () => {

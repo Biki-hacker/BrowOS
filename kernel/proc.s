@@ -142,9 +142,9 @@ proc_copy_ucode:
   addi t0, t0, 1
   blt t0, t1, proc_copy_ucode
 
-  # Map user code page at VA 0x10000000 (User Text: R | X | U)
+  # Map user code page at VA 0x40000000 (User Text: R | X | U)
   mv a0, s3
-  li a1, 0x10000000
+  li a1, 0x40000000
   mv a2, s4
   li a3, 0x1B    # PTE_V | PTE_R | PTE_X | PTE_U
   call vmm_map_page
@@ -161,8 +161,8 @@ proc_zero_tf:
   addi t1, t1, 1
   blt t1, t2, proc_zero_tf
 
-  # Set tf.epc = 0x10000000 (offset 128)
-  li t1, 0x10000000
+  # Set tf.epc = 0x40000000 (offset 128)
+  li t1, 0x40000000
   sw t1, 128(t0)
   # Set tf.sp = 0x7FFFF000 (offset 8)
   li t1, 0x7FFFF000

@@ -255,6 +255,180 @@ kmain_sched_returned:
   li t1, 4
   bne t0, t1, kmain_fail
 
+  # Reset PMM and Heap again for device/FS tests
+  call pmm_init
+  la t0, heap_next
+  li t1, HEAP_START
+  sw t1, 0(t0)
+  la t0, heap_free
+  sw x0, 0(t0)
+
+  # TEST 11: UART transmit and receive
+  li s0, 11
+  call uart_init
+
+  # Transmit 'B' via UART
+  li a0, 'B'
+  call uart_putc
+
+  # Transmit 'O' via UART
+  li a0, 'O'
+  call uart_putc
+
+  # Transmit 'S' via UART
+  li a0, 'S'
+  call uart_putc
+
+  # Read UART (should return -1 since no input is pending)
+  call uart_getc
+  li t0, -1
+  bne a0, t0, kmain_fail
+
+  # TEST 12: Block device sector read/write
+  li s0, 12
+  call blk_init
+  beqz a0, kmain_fail     # capacity must be > 0
+
+  # Write a known pattern to a scratch area in RAM, then write sector
+  li t0, 0x00300000       # scratch area (3 MiB, in allocatable range)
+  li t1, 0
+  li t2, 128              # fill 512 bytes (128 words)
+blk_test_fill:
+  addi t3, t1, 0xA5
+  sw t3, 0(t0)
+  addi t0, t0, 4
+  addi t1, t1, 1
+  blt t1, t2, blk_test_fill
+
+  # Write sector 0 from RAM
+  li a0, 0
+  li a1, 0x00300000
+  call blk_write_sector
+  bnez a0, kmain_fail
+
+  # Clear the RAM area
+  li t0, 0x00300000
+  li t1, 128
+blk_test_clear:
+  sw x0, 0(t0)
+  addi t0, t0, 4
+  addi t1, t1, -1
+  bnez t1, blk_test_clear
+
+  # Read sector 0 back into RAM
+  li a0, 0
+  li a1, 0x00300000
+  call blk_read_sector
+  bnez a0, kmain_fail
+
+  # Verify pattern
+  li t0, 0x00300000
+  li t1, 0
+  li t2, 128
+blk_test_verify:
+  lw t3, 0(t0)
+  addi t4, t1, 0xA5
+  bne t3, t4, kmain_fail
+  addi t0, t0, 4
+  addi t1, t1, 1
+  blt t1, t2, blk_test_verify
+
+  # TEST 13: BrFS filesystem
+  li s0, 13
+
+  # Initialize filesystem (formats disk)
+  call fs_init
+  bnez a0, kmain_fail
+
+  # Verify superblock was written
+  la t0, fs_total_blocks
+  lw t1, 0(t0)
+  beqz t1, kmain_fail
+
+  # Create /dev directory
+  li a0, 0              # parent = root inode
+  la a1, str_dev
+  call fs_mkdir
+  li t0, -1
+  beq a0, t0, kmain_fail
+  mv s1, a0             # s1 = dev inode
+
+  # Create /tmp directory
+  li a0, 0
+  la a1, str_tmp
+  call fs_mkdir
+  li t0, -1
+  beq a0, t0, kmain_fail
+  mv s2, a0             # s2 = tmp inode
+
+  # Lookup /dev from root
+  li a0, 0
+  la a1, str_dev
+  call fs_lookup
+  bne a0, s1, kmain_fail
+
+  # Lookup /tmp from root
+  li a0, 0
+  la a1, str_tmp
+  call fs_lookup
+  bne a0, s2, kmain_fail
+
+  # Create a file /tmp/hello
+  mv a0, s2             # parent = /tmp inode
+  la a1, str_hello
+  li a2, BRFS_INODE_FILE
+  call fs_create
+  li t0, -1
+  beq a0, t0, kmain_fail
+  mv s3, a0             # s3 = hello file inode
+
+  # Write "BrowOS\0" to the file
+  mv a0, s3
+  li a1, 0              # offset = 0
+  la a2, str_browos
+  li a3, 7              # 7 bytes including null
+  call fs_write
+  li t0, 7
+  bne a0, t0, kmain_fail
+
+  # Read it back to verify
+  mv a0, s3
+  li a1, 0
+  la a2, fs_read_scratch
+  li a3, 7
+  call fs_read
+  li t0, 7
+  bne a0, t0, kmain_fail
+
+  # Compare read data with original
+  la t0, fs_read_scratch
+  la t1, str_browos
+  li t2, 0
+fs_verify_loop:
+  li t3, 7
+  bge t2, t3, fs_verify_done
+  lbu t4, 0(t0)
+  lbu t5, 0(t1)
+  bne t4, t5, kmain_fail
+  addi t0, t0, 1
+  addi t1, t1, 1
+  addi t2, t2, 1
+  j fs_verify_loop
+fs_verify_done:
+
+  # Unlink /tmp/hello
+  mv a0, s2
+  la a1, str_hello
+  call fs_unlink
+  bnez a0, kmain_fail
+
+  # Verify lookup fails now
+  mv a0, s2
+  la a1, str_hello
+  call fs_lookup
+  li t0, -1
+  bne a0, t0, kmain_fail
+
   li t0, 1
   j kmain_report
 kmain_fail:
@@ -330,7 +504,14 @@ fromhost: .word 0
 .global kmain_saved_sp
 kmain_saved_sp: .word 0
 
+str_dev:    .asciz "dev"
+str_tmp:    .asciz "tmp"
+str_hello:  .asciz "hello"
+str_browos: .asciz "BrowOS"
+
 .bss
 .align 12
 stack: .zero 8192
 stack_top:
+.align 4
+fs_read_scratch: .zero 64

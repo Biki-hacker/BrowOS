@@ -54,6 +54,12 @@ vmm_init:
   li t1, 0x008000EF
   sw t1, 32(s0)
 
+  # Identity-map MMIO window (0x10000000 -> VPN[1] = 0x10000000 >> 22 = 64)
+  # PTE = (0x10000000 >> 12 << 10) | 0xEF = (0x10000 << 10) | 0xEF = 0x040000EF
+  # Offset in root table = 64 * 4 = 256
+  li t1, 0x040000EF
+  sw t1, 256(s0)
+
   # Activate Sv32 paging in kernel
   mv a0, s0
   call vmm_switch
@@ -75,7 +81,7 @@ vmm_create_space:
   mv s0, a0
   call zero_frame
 
-  # Copy kernel mappings (first 16 entries = 64 MiB and CLINT) from vmm_kernel_root
+  # Copy kernel mappings (first 128 entries = 512 MiB: covers RAM, CLINT, MMIO) from vmm_kernel_root
   la t0, vmm_kernel_root
   lw s1, 0(t0)
 
@@ -87,7 +93,7 @@ vmm_copy_loop:
   add t4, s0, t3
   sw t5, 0(t4)
   addi t2, t2, 1
-  li t3, 64
+  li t3, 128
   blt t2, t3, vmm_copy_loop
 
   mv a0, s0
