@@ -59,6 +59,7 @@
 .equ SYS_PIPE,     16
 .equ SYS_KILL,     17
 .equ SYS_WAITPID,  18
+.equ SYS_GPU,      19
 
 # Signal numbers
 .equ SIGINT,       2
@@ -70,6 +71,29 @@
 .equ USER_TEXT_VA,  0x40000000
 .equ USER_STACK_VA, 0x7FFFF000
 .equ USER_STACK_TOP,0x80000000
+
+# BrowGPU register offsets
+.equ GPU_REG_MAGIC,    0x00
+.equ GPU_REG_VERSION,  0x04
+.equ GPU_REG_STATUS,   0x08
+.equ GPU_REG_FB_WIDTH, 0x0C
+.equ GPU_REG_FB_HEIGHT,0x10
+.equ GPU_REG_FB_ADDR,  0x14
+.equ GPU_REG_CMD_ADDR, 0x18
+.equ GPU_REG_CMD_LEN,  0x1C
+.equ GPU_REG_SUBMIT,   0x20
+.equ GPU_REG_PRESENT,  0x24
+.equ GPU_REG_BACKEND,  0x28
+
+.equ GPU_MAGIC,        0x42475055
+.equ GPU_VERSION,      0x00010000
+
+# BrowGPU command opcodes
+.equ CMD_CLEAR,            1
+.equ CMD_DRAW_RECT,        2
+.equ CMD_BLIT,             3
+.equ CMD_DISPATCH_COMPUTE, 4
+.equ CMD_PRESENT,          5
 
 # UART 16550A register offsets
 .equ UART_RBR,     0x00

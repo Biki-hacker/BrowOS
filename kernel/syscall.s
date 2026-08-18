@@ -44,6 +44,8 @@ syscall_dispatch:
   beq a7, t0, sys_kill
   li t0, 18 # SYS_WAITPID
   beq a7, t0, sys_waitpid
+  li t0, 19 # SYS_GPU
+  beq a7, t0, sys_gpu_dispatch
 
   # Unknown syscall
   li a0, -1

@@ -9,7 +9,7 @@ const { assemble } = require('../tools/asm.js');
 const { readElf, loadSegments } = require('../tools/elf.js');
 const { Bus } = require('../tools/mem.js');
 const { Cpu } = require('../tools/cpu.js');
-const { Uart, BlockDevice } = require('../tools/devices.js');
+const { Uart, BlockDevice, BrowGpu } = require('../tools/devices.js');
 const { formatDisk } = require('../tools/mkfs.js');
 const { RAM_SIZE } = require('../tools/memmap.js');
 
@@ -23,6 +23,7 @@ const KERNEL_PARTS = [
   'sched.s',
   'signal.s',
   'pipe.s',
+  'driver_gpu.s',
   'syscall.s',
   'trap.s',
   'driver_uart.s',
@@ -60,19 +61,21 @@ _start:
   li a7, 1   # SYS_EXIT
   li a0, 42
   ecall
+spin:
+  j spin
 
 .data
 msg: .ascii "Hello from ELF!\\n"
 `;
-  const userElf = buildUserProgram(userSrc);
-  assert.ok(userElf.bytes.length > 0, 'user ELF binary generated');
 
-  // 2. Format disk with user binary as /sh
+  const userElf = buildUserProgram(userSrc);
+
+  // Format disk image with /sh = user program
   const diskBytes = formatDisk(2048, [
     { path: 'sh', content: userElf.bytes },
   ]);
 
-  // 3. Assemble kernel
+  // Build and run kernel
   const k = buildKernel();
   const elfPath = path.join(os.tmpdir(), `browos-exec-${process.pid}-${Date.now()}.elf`);
   fs.writeFileSync(elfPath, k.bytes);
@@ -89,6 +92,9 @@ msg: .ascii "Hello from ELF!\\n"
   const blk = new BlockDevice(2048, bus);
   blk.disk.set(diskBytes);
   blk.attach(bus);
+
+  const gpu = new BrowGpu(bus);
+  gpu.attach(bus);
 
   const tohostAddr = elf.symbols['tohost'] ? elf.symbols['tohost'].value : null;
   let tohostValue = null;

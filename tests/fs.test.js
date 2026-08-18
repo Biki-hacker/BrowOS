@@ -16,6 +16,7 @@ const KERNEL_PARTS = [
   'sched.s',
   'signal.s',
   'pipe.s',
+  'driver_gpu.s',
   'syscall.s',
   'trap.s',
   'driver_uart.s',

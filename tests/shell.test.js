@@ -9,7 +9,7 @@ const { assemble } = require('../tools/asm.js');
 const { readElf, loadSegments } = require('../tools/elf.js');
 const { Bus } = require('../tools/mem.js');
 const { Cpu } = require('../tools/cpu.js');
-const { Uart, BlockDevice } = require('../tools/devices.js');
+const { Uart, BlockDevice, BrowGpu } = require('../tools/devices.js');
 const { formatDisk } = require('../tools/mkfs.js');
 const { RAM_SIZE } = require('../tools/memmap.js');
 
@@ -25,6 +25,7 @@ const KERNEL_PARTS = [
   'sched.s',
   'signal.s',
   'pipe.s',
+  'driver_gpu.s',
   'syscall.s',
   'trap.s',
   'driver_uart.s',
@@ -69,6 +70,9 @@ function runShellSession(inputCommands, maxSteps = 50000000) {
   const blk = new BlockDevice(2048, bus);
   blk.disk.set(diskBytes);
   blk.attach(bus);
+
+  const gpu = new BrowGpu(bus);
+  gpu.attach(bus);
 
   const tohostAddr = elf.symbols['tohost'] ? elf.symbols['tohost'].value : null;
   let tohostValue = null;
@@ -139,5 +143,12 @@ test('shell: ps and kill command execute in shell', { timeout: 300000 }, () => {
   assert.ok(output.includes('COMMAND'), 'ps output must display process table header');
   assert.ok(output.includes('sh'), 'ps output must show shell process');
   assert.ok(output.includes('kill: process not found'), 'kill invalid pid must report error');
+  assert.equal(tohost, 1, 'shutdown command must exit');
+});
+
+test('shell: globe command dispatches 3D raytracing compute on BrowGPU', { timeout: 300000 }, () => {
+  const { output, tohost } = runShellSession('globe\nshutdown\n');
+  assert.ok(output.includes('BrowGPU: Computing 3D Raytraced Earth Globe...'), 'must report compute start');
+  assert.ok(output.includes('BrowGPU: Raytracing complete. Frame presented.'), 'must report frame presentation');
   assert.equal(tohost, 1, 'shutdown command must exit');
 });

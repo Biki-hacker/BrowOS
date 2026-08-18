@@ -7,7 +7,7 @@ const { assemble } = require('../tools/asm.js');
 const { readElf, loadSegments } = require('../tools/elf.js');
 const { Bus } = require('../tools/mem.js');
 const { Cpu } = require('../tools/cpu.js');
-const { Uart, BlockDevice } = require('../tools/devices.js');
+const { Uart, BlockDevice, BrowGpu } = require('../tools/devices.js');
 const { formatDisk } = require('../tools/mkfs.js');
 const { RAM_SIZE } = require('../tools/memmap.js');
 
@@ -23,6 +23,7 @@ const KERNEL_PARTS = [
   'sched.s',
   'signal.s',
   'pipe.s',
+  'driver_gpu.s',
   'syscall.s',
   'trap.s',
   'driver_uart.s',
@@ -112,6 +113,9 @@ success_msg: .ascii "FORK_PASS"
   const blk = new BlockDevice(2048, bus);
   blk.disk.set(diskBytes);
   blk.attach(bus);
+
+  const gpu = new BrowGpu(bus);
+  gpu.attach(bus);
 
   const tohostAddr = elf.symbols['tohost'] ? elf.symbols['tohost'].value : null;
   let tohostValue = null;

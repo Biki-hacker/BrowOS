@@ -9,7 +9,7 @@ const { assemble } = require('../tools/asm.js');
 const { readElf, loadSegments } = require('../tools/elf.js');
 const { Bus } = require('../tools/mem.js');
 const { Cpu } = require('../tools/cpu.js');
-const { Uart, BlockDevice } = require('../tools/devices.js');
+const { Uart, BlockDevice, BrowGpu } = require('../tools/devices.js');
 const {
   RAM_BASE,
   RAM_SIZE,
@@ -28,6 +28,7 @@ const KERNEL_PARTS = [
   'sched.s',
   'signal.s',
   'pipe.s',
+  'driver_gpu.s',
   'syscall.s',
   'trap.s',
   'driver_uart.s',
@@ -66,6 +67,9 @@ function bootKernel(maxSteps = 50000000) {
 
   const blk = new BlockDevice(DISK_SECTORS, bus);
   blk.attach(bus);
+
+  const gpu = new BrowGpu(bus);
+  gpu.attach(bus);
 
   // Wire up tohost detection
   const tohostAddr = elf.symbols['tohost'] ? elf.symbols['tohost'].value : null;

@@ -248,7 +248,7 @@ sh_try_kill:
   la a1, cmd_kill
   li a2, 4
   call strncmp
-  bnez a0, sh_try_halt
+  bnez a0, sh_try_globe
   addi a0, s0, 4
 sh_kill_sp:
   lbu t0, 0(a0)
@@ -286,6 +286,27 @@ sh_kill_usage:
   j sh_loop
 sh_kill_err:
   la a0, str_kill_err
+  call puts
+  j sh_loop
+
+sh_try_globe:
+  # ─── Built-in: globe ─────────────────────────────────────────────────
+  mv a0, s0
+  la a1, cmd_globe
+  call strcmp
+  bnez a0, sh_try_halt
+  la a0, str_globe_msg
+  call puts
+  # Dispatch 3D compute raytracer on BrowGPU
+  li a0, 3           # op = GPU_OP_DISPATCH_COMPUTE
+  li a1, 1           # kernel_id = 1 (raytrace_globe)
+  li a2, 10          # time
+  li a3, 0
+  call gpu_dispatch
+  # Present framebuffer
+  li a0, 4           # op = GPU_OP_PRESENT
+  call gpu_dispatch
+  la a0, str_globe_done
   call puts
   j sh_loop
 
@@ -339,6 +360,8 @@ str_rm_err:      .asciz "rm: failed to remove file"
 str_touch_err:   .asciz "touch: failed to create file"
 str_kill_usage:  .asciz "kill: missing pid argument"
 str_kill_err:    .asciz "kill: process not found"
+str_globe_msg:   .asciz "BrowGPU: Computing 3D Raytraced Earth Globe..."
+str_globe_done:  .asciz "BrowGPU: Raytracing complete. Frame presented."
 str_unknown:     .asciz "sh: command not found: "
 str_halt_msg:    .asciz "System shutting down..."
 
@@ -354,6 +377,7 @@ cmd_mkdir:    .asciz "mkdir"
 cmd_rm:       .asciz "rm"
 cmd_touch:    .asciz "touch"
 cmd_kill:     .asciz "kill"
+cmd_globe:    .asciz "globe"
 cmd_shutdown: .asciz "shutdown"
 cmd_reboot:   .asciz "reboot"
 cmd_exit:     .asciz "exit"
@@ -371,6 +395,7 @@ str_help_text:
   .ascii "  rm        - Remove a file\n"
   .ascii "  ps        - Report current process status\n"
   .ascii "  kill      - Terminate a process by PID\n"
+  .ascii "  globe     - Compute and render 3D raytraced Earth on BrowGPU\n"
   .ascii "  uptime    - Show CPU cycle count\n"
   .asciz "  shutdown  - Halt and power off the machine"
 

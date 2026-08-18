@@ -22,6 +22,7 @@
 .global pipe
 .global kill
 .global waitpid
+.global gpu_dispatch
 
 exit:
   li a7, 1
@@ -105,6 +106,11 @@ kill:
 
 waitpid:
   li a7, 18
+  ecall
+  ret
+
+gpu_dispatch:
+  li a7, 19
   ecall
   ret
 

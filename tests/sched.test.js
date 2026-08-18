@@ -9,7 +9,7 @@ const { assemble } = require('../tools/asm.js');
 const { readElf, loadSegments } = require('../tools/elf.js');
 const { Bus } = require('../tools/mem.js');
 const { Cpu } = require('../tools/cpu.js');
-const { Uart, BlockDevice } = require('../tools/devices.js');
+const { Uart, BlockDevice, BrowGpu } = require('../tools/devices.js');
 const { RAM_SIZE } = require('../tools/memmap.js');
 
 const KERNEL_DIR = path.join(__dirname, '..', 'kernel');
@@ -22,6 +22,7 @@ const KERNEL_PARTS = [
   'sched.s',
   'signal.s',
   'pipe.s',
+  'driver_gpu.s',
   'syscall.s',
   'trap.s',
   'driver_uart.s',
@@ -55,6 +56,8 @@ function bootKernel(maxSteps = 50000000) {
   uart.attach(bus);
   const blk = new BlockDevice(DISK_SECTORS, bus);
   blk.attach(bus);
+  const gpu = new BrowGpu(bus);
+  gpu.attach(bus);
 
   const tohostAddr = elf.symbols['tohost'] ? elf.symbols['tohost'].value : null;
   let tohostValue = null;

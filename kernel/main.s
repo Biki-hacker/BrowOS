@@ -434,6 +434,10 @@ fs_verify_done:
   li t0, -1
   bne a0, t0, kmain_fail
 
+  # Initialize pipe and GPU subsystems
+  call pipe_init
+  call gpu_init
+
   # TEST 14: Check if /sh executable exists in root directory. If present, load and execute in U-mode!
   li s0, 14
   li a0, 0             # root dir inode
