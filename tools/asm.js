@@ -33,7 +33,8 @@ const CSRS = {
   satp: 0x180, sstatus: 0x100, sie: 0x104, stvec: 0x105, sscratch: 0x140,
   sepc: 0x141, scause: 0x142, stval: 0x143, sip: 0x144,
   cycle: 0xC00, time: 0xC01, instret: 0xC02,
-  cycleh: 0xC80, timeh: 0xC81, instreth: 0xC82
+  cycleh: 0xC80, timeh: 0xC81, instreth: 0xC82,
+  mvendorid: 0xF11, marchid: 0xF12, mimpid: 0xF13, mhartid: 0xF14
 };
 
 // Instruction table. fmt: r=register, i=immediate, sh=shift, s=store,
@@ -416,6 +417,7 @@ function assemble(src, opts = {}) {
         const rd = word === 'call' ? 1 : 0;
         const target = splitOperandTokens(toks, 0, lineNo);
         const item = { kind: 'inst', size: 4, enc: 0, patch: { type: 'j', tokens: target, lineNo } };
+        item.rd = rd;
         emit(item); return;
       }
       case 'jal': {
