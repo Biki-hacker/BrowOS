@@ -85,10 +85,12 @@ function bundle() {
   // Strip CommonJS exports / requires for browser compatibility
   function stripNodeCode(code) {
     return code
-      .replace(/const\s+\{.*\}\s*=\s*require\(.*\);?/g, '')
-      .replace(/const\s+\w+\s*=\s*require\(.*\);?/g, '')
-      .replace(/module\.exports\s*=\s*\{[\s\S]*?\};?/g, '')
-      .replace(/if\s*\(typeof module[\s\S]*?\}\s*\}/g, '');
+      .replace(/const\s+[\s\S]*?=\s*require\([^\)]*\);?/g, '')
+      .replace(/let\s+[\s\S]*?=\s*require\([^\)]*\);?/g, '')
+      .replace(/var\s+[\s\S]*?=\s*require\([^\)]*\);?/g, '')
+      .replace(/module\.exports\s*=\s*[\s\S]*?;/g, '')
+      .replace(/if\s*\(typeof module[\s\S]*?\}\s*\}/g, '')
+      .replace(/'use strict';?/g, '');
   }
 
   const memmapJs = stripNodeCode(fs.readFileSync(path.join(TOOLS_DIR, 'memmap.js'), 'utf8'));

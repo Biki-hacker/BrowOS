@@ -107,8 +107,8 @@ class Cpu {
     this.resetPc = (opts.pc !== undefined ? opts.pc : 0) | 0;
     this.initPriv = opts.priv !== undefined ? opts.priv : 3;
     this.trace = opts.trace || null;
-    const { Clint } = require('./mem.js');
-    this.timer = opts.timer || new Clint();
+    const ClintClass = (typeof Clint !== 'undefined') ? Clint : require('./mem.js').Clint;
+    this.timer = opts.timer || new ClintClass();
     this.timer.attach(bus);
     this.reset();
   }

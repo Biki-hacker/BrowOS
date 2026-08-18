@@ -420,7 +420,7 @@ footer {
     window.BROWOS_DISK_IMG = BROWOS_DISK_IMG;
 
     // Inlined Virtual Machine Modules
-'use strict';
+
 
 const RAM_BASE = 0x00000000;
 const RAM_SIZE = 0x10000000;
@@ -465,7 +465,7 @@ const CMD_DISPATCH_COMPUTE = 4;
 const CMD_PRESENT = 5;
 
 
-'use strict';
+
 
 class Bus {
   constructor(size = 16 * 1024 * 1024, offset = 0) {
@@ -616,7 +616,7 @@ class Clint {
 
 
 
-'use strict';
+
 
 const OP_LUI = 0x37, OP_AUIPC = 0x17, OP_JAL = 0x6F, OP_JALR = 0x67;
 const OP_B = 0x63, OP_L = 0x03, OP_S = 0x23, OP_I = 0x13, OP_R = 0x33;
@@ -725,8 +725,8 @@ class Cpu {
     this.resetPc = (opts.pc !== undefined ? opts.pc : 0) | 0;
     this.initPriv = opts.priv !== undefined ? opts.priv : 3;
     this.trace = opts.trace || null;
-    
-    this.timer = opts.timer || new Clint();
+    const ClintClass = (typeof Clint !== 'undefined') ? Clint : require('./mem.js').Clint;
+    this.timer = opts.timer || new ClintClass();
     this.timer.attach(bus);
     this.reset();
   }
@@ -1432,7 +1432,7 @@ class Cpu {
 
 
 
-'use strict';
+
 
 /**
  * devices.js — Virtual hardware devices for BrowOS.
@@ -1441,29 +1441,7 @@ class Cpu {
  * methods keyed to their MMIO address range.
  */
 
-const {
-  UART_BASE,
-  BLOCK_BASE,
-  GPU_CTRL_BASE,
-  GPU_MAGIC,
-  GPU_VERSION,
-  GPU_REG_MAGIC,
-  GPU_REG_VERSION,
-  GPU_REG_STATUS,
-  GPU_REG_FB_WIDTH,
-  GPU_REG_FB_HEIGHT,
-  GPU_REG_FB_ADDR,
-  GPU_REG_CMD_ADDR,
-  GPU_REG_CMD_LEN,
-  GPU_REG_SUBMIT,
-  GPU_REG_PRESENT,
-  GPU_REG_BACKEND,
-  CMD_CLEAR,
-  CMD_DRAW_RECT,
-  CMD_BLIT,
-  CMD_DISPATCH_COMPUTE,
-  CMD_PRESENT,
-} = require('./memmap.js');
+
 
 // ─── 16550A UART ───────────────────────────────────────────────────────────────
 
@@ -1966,7 +1944,7 @@ class BrowGpu {
 
 
 
-'use strict';
+
 
 function readU16(b, o) { return b[o] | (b[o + 1] << 8); }
 function readU32(b, o) {
@@ -2077,7 +2055,7 @@ function loadSegments(bus, fileBytes, elf) {
 
 
 
-'use strict';
+
 
 /**
  * terminal.js — Canvas-based ANSI terminal emulator for BrowOS.
@@ -2346,7 +2324,7 @@ if (typeof module !== 'undefined' && module.exports) {
   
 }
 
-'use strict';
+
 
 /**
  * app.js — BrowOS Browser Host Controller and VM Execution Manager.
@@ -2364,7 +2342,7 @@ class BrowOsApp {
 
     this.running = false;
     this.animFrameId = null;
-    this.instructionsPerBatch = 50000;
+    this.instructionsPerBatch = 150000;
 
     this.lastTime = performance.now();
     this.lastInstCount = 0;

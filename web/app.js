@@ -16,7 +16,7 @@ class BrowOsApp {
 
     this.running = false;
     this.animFrameId = null;
-    this.instructionsPerBatch = 50000;
+    this.instructionsPerBatch = 150000;
 
     this.lastTime = performance.now();
     this.lastInstCount = 0;
