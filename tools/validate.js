@@ -9,9 +9,7 @@ const { readElf, loadSegments } = require('./elf.js');
 const DEFAULT_BUS_SIZE = 0x10000000; // 256 MiB
 const DEFAULT_MAX_STEPS = 20000000;
 
-const TEST_SKIPS = {
-  'rv32si-p-dirty': 'requires Sv32 MMU + PTE A/D tracking (Phase 5)',
-};
+const TEST_SKIPS = {};
 
 function findSymbol(elf, name) {
   const s = elf.symbols[name];

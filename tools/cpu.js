@@ -5,11 +5,22 @@ const OP_B = 0x63, OP_L = 0x03, OP_S = 0x23, OP_I = 0x13, OP_R = 0x33;
 const OP_FENCE = 0x0F, OP_SYSTEM = 0x73;
 
 const CAUSE_MISALIGNED_FETCH = 0;
+const CAUSE_FETCH_ACCESS = 1;
 const CAUSE_ILLEGAL = 2;
 const CAUSE_BREAKPOINT = 3;
+const CAUSE_MISALIGNED_LOAD = 4;
+const CAUSE_LOAD_ACCESS = 5;
+const CAUSE_MISALIGNED_STORE = 6;
+const CAUSE_STORE_ACCESS = 7;
 const CAUSE_ECALL_U = 8;
 const CAUSE_ECALL_S = 9;
 const CAUSE_ECALL_M = 11;
+const CAUSE_FETCH_PAGE_FAULT = 12;
+const CAUSE_LOAD_PAGE_FAULT = 13;
+const CAUSE_STORE_PAGE_FAULT = 15;
+
+const PTE_V = 0x01, PTE_R = 0x02, PTE_W = 0x04, PTE_X = 0x08;
+const PTE_U = 0x10, PTE_G = 0x20, PTE_A = 0x40, PTE_D = 0x80;
 
 const INT_SSI = 1, INT_MSI = 3, INT_STI = 5, INT_MTI = 7, INT_SEI = 9, INT_MEI = 11;
 const MIP_SSIP = 1 << INT_SSI, MIP_MSIP = 1 << INT_MSI, MIP_STIP = 1 << INT_STI,
@@ -21,9 +32,13 @@ const DEVICE_IRQ_MASK = MIP_MSIP | MIP_MTIP;
 
 const MSTATUS_SIE = 1 << 1, MSTATUS_MIE = 1 << 3, MSTATUS_SPIE = 1 << 5,
       MSTATUS_MPIE = 1 << 7, MSTATUS_SPP = 1 << 8, MSTATUS_MPP = 3 << 11,
+      MSTATUS_MPRV = 1 << 17,
       MSTATUS_SUM = 1 << 18, MSTATUS_MXR = 1 << 19,
-      MSTATUS_TVM = 1 << 20, MSTATUS_TSR = 1 << 22;
+      MSTATUS_TVM = 1 << 20, MSTATUS_TW = 1 << 21, MSTATUS_TSR = 1 << 22;
 const SSTATUS_VISIBLE = MSTATUS_SIE | MSTATUS_SPIE | MSTATUS_SPP | MSTATUS_SUM | MSTATUS_MXR;
+const MSTATUS_WRITABLE = MSTATUS_SIE | MSTATUS_MIE | MSTATUS_SPIE | MSTATUS_MPIE |
+                        MSTATUS_SPP | MSTATUS_MPP | MSTATUS_MPRV | MSTATUS_SUM |
+                        MSTATUS_MXR | MSTATUS_TVM | MSTATUS_TW | MSTATUS_TSR;
 
 const PRIV_U = 0, PRIV_S = 1, PRIV_M = 3;
 
@@ -112,10 +127,166 @@ class Cpu {
     this.csrs = Object.create(null);
     for (const addr of Object.values(CSR_ADDRS)) this.csrs[addr] = 0;
     this.csrs[0x301] = MISA_RV32IM;
+    this.tlb = new Map();
   }
 
   setX(i, v) {
     if (i !== 0) this.x[i] = v | 0;
+  }
+
+  flushTlb(vaddr = null, asid = null) {
+    if (vaddr === null && asid === null) {
+      this.tlb.clear();
+      return;
+    }
+    if (vaddr !== null) {
+      const vpn = (vaddr >>> 12) >>> 0;
+      this.tlb.delete(vpn);
+      return;
+    }
+    if (asid !== null) {
+      for (const [k, entry] of this.tlb) {
+        if (entry.asid === asid && !(entry.flags & PTE_G)) {
+          this.tlb.delete(k);
+        }
+      }
+    }
+  }
+
+  translate(vaddr, accessType) {
+    const va = vaddr >>> 0;
+    let effPriv = this.priv;
+    const mstatus = this.csrs[0x300];
+    if (accessType !== 0 && this.priv === PRIV_M && (mstatus & MSTATUS_MPRV)) {
+      effPriv = (mstatus >>> 11) & 3;
+    }
+    if (effPriv === PRIV_M) return va;
+
+    const satp = this.csrs[0x180] >>> 0;
+    const mode = (satp >>> 31) & 1;
+    if (mode === 0) return va;
+
+    const asid = (satp >>> 22) & 0x1FF;
+    const vpn = (va >>> 12) >>> 0;
+    const offset = va & 0xFFF;
+
+    const tlbEntry = this.tlb.get(vpn);
+    if (tlbEntry && (tlbEntry.global || tlbEntry.asid === asid)) {
+      const flags = tlbEntry.flags;
+      const u = (flags & PTE_U) !== 0;
+      const r = (flags & PTE_R) !== 0;
+      const w = (flags & PTE_W) !== 0;
+      const x = (flags & PTE_X) !== 0;
+      const a = (flags & PTE_A) !== 0;
+      const d = (flags & PTE_D) !== 0;
+      const mxr = (mstatus & MSTATUS_MXR) !== 0;
+      const sum = (mstatus & MSTATUS_SUM) !== 0;
+
+      let fault = false;
+      if (effPriv === PRIV_U) {
+        if (!u) fault = true;
+      } else if (effPriv === PRIV_S) {
+        if (u && (!sum || accessType === 0)) fault = true;
+      }
+      if (accessType === 0 && !x) fault = true;
+      else if (accessType === 1 && !r && !(mxr && x)) fault = true;
+      else if (accessType === 2 && !w) fault = true;
+      if (!a) fault = true;
+      if (accessType === 2 && !d) fault = true;
+
+      if (fault) {
+        const cause = accessType === 0 ? CAUSE_FETCH_PAGE_FAULT :
+                      accessType === 1 ? CAUSE_LOAD_PAGE_FAULT : CAUSE_STORE_PAGE_FAULT;
+        this.trap(cause, va);
+        return null;
+      }
+      return ((tlbEntry.ppn << 12) | offset) >>> 0;
+    }
+
+    const rootPa = ((satp & 0x3FFFFF) << 12) >>> 0;
+    const vpn1 = (va >>> 22) & 0x3FF;
+    const vpn0 = (va >>> 12) & 0x3FF;
+    const pte1Addr = (rootPa + vpn1 * 4) >>> 0;
+    const pte1 = this.bus.read32(pte1Addr) >>> 0;
+
+    if ((pte1 & PTE_V) === 0 || (!(pte1 & PTE_R) && (pte1 & PTE_W))) {
+      const cause = accessType === 0 ? CAUSE_FETCH_PAGE_FAULT :
+                    accessType === 1 ? CAUSE_LOAD_PAGE_FAULT : CAUSE_STORE_PAGE_FAULT;
+      this.trap(cause, va);
+      return null;
+    }
+
+    let leafPte, leafPpn, isSuper;
+    if ((pte1 & (PTE_R | PTE_X)) === 0) {
+      const l0Pa = (((pte1 >>> 10) & 0x3FFFFF) << 12) >>> 0;
+      const pte0Addr = (l0Pa + vpn0 * 4) >>> 0;
+      const pte0 = this.bus.read32(pte0Addr) >>> 0;
+
+      if ((pte0 & PTE_V) === 0 || (!(pte0 & PTE_R) && (pte0 & PTE_W))) {
+        const cause = accessType === 0 ? CAUSE_FETCH_PAGE_FAULT :
+                      accessType === 1 ? CAUSE_LOAD_PAGE_FAULT : CAUSE_STORE_PAGE_FAULT;
+        this.trap(cause, va);
+        return null;
+      }
+      if ((pte0 & (PTE_R | PTE_X)) === 0) {
+        const cause = accessType === 0 ? CAUSE_FETCH_PAGE_FAULT :
+                      accessType === 1 ? CAUSE_LOAD_PAGE_FAULT : CAUSE_STORE_PAGE_FAULT;
+        this.trap(cause, va);
+        return null;
+      }
+      leafPte = pte0;
+      leafPpn = (pte0 >>> 10) & 0x3FFFFF;
+      isSuper = false;
+    } else {
+      if (((pte1 >>> 10) & 0x3FF) !== 0) {
+        const cause = accessType === 0 ? CAUSE_FETCH_PAGE_FAULT :
+                      accessType === 1 ? CAUSE_LOAD_PAGE_FAULT : CAUSE_STORE_PAGE_FAULT;
+        this.trap(cause, va);
+        return null;
+      }
+      leafPte = pte1;
+      leafPpn = (pte1 >>> 10) & 0x3FFFFF;
+      isSuper = true;
+    }
+
+    const u = (leafPte & PTE_U) !== 0;
+    const r = (leafPte & PTE_R) !== 0;
+    const w = (leafPte & PTE_W) !== 0;
+    const x = (leafPte & PTE_X) !== 0;
+    const a = (leafPte & PTE_A) !== 0;
+    const d = (leafPte & PTE_D) !== 0;
+    const g = (leafPte & PTE_G) !== 0;
+    const mxr = (mstatus & MSTATUS_MXR) !== 0;
+    const sum = (mstatus & MSTATUS_SUM) !== 0;
+
+    let fault = false;
+    if (effPriv === PRIV_U) {
+      if (!u) fault = true;
+    } else if (effPriv === PRIV_S) {
+      if (u && (!sum || accessType === 0)) fault = true;
+    }
+    if (accessType === 0 && !x) fault = true;
+    else if (accessType === 1 && !r && !(mxr && x)) fault = true;
+    else if (accessType === 2 && !w) fault = true;
+    if (!a) fault = true;
+    if (accessType === 2 && !d) fault = true;
+
+    if (fault) {
+      const cause = accessType === 0 ? CAUSE_FETCH_PAGE_FAULT :
+                    accessType === 1 ? CAUSE_LOAD_PAGE_FAULT : CAUSE_STORE_PAGE_FAULT;
+      this.trap(cause, va);
+      return null;
+    }
+
+    if (isSuper) {
+      const ppn1 = (leafPpn >>> 10) & 0xFFF;
+      const superPpn = (ppn1 << 10) | vpn0;
+      this.tlb.set(vpn, { ppn: superPpn, flags: leafPte & 0xFF, asid, global: g });
+      return ((ppn1 << 22) | (va & 0x3FFFFF)) >>> 0;
+    } else {
+      this.tlb.set(vpn, { ppn: leafPpn, flags: leafPte & 0xFF, asid, global: g });
+      return ((leafPpn << 12) | offset) >>> 0;
+    }
   }
 
   fetch32(addr) {
@@ -123,7 +294,9 @@ class Cpu {
       this.trap(CAUSE_MISALIGNED_FETCH, addr);
       return null;
     }
-    return this.bus.read32(addr);
+    const pa = this.translate(addr, 0);
+    if (pa === null) return null;
+    return this.bus.read32(pa);
   }
 
   step() {
@@ -272,8 +445,22 @@ class Cpu {
       this.csrs[0x301] = (v & MISA_RV32IM) | MISA_RV32IM;
       return;
     }
+    if (addr === 0x180) {                                              // satp
+      const mode = (v >>> 31) & 1;
+      const asid = (v >>> 22) & 0x1FF;
+      const ppn = v & 0x3FFFFF;
+      this.csrs[0x180] = ((mode << 31) | (asid << 22) | ppn) >>> 0;
+      this.flushTlb();
+      return;
+    }
+    if (addr === 0x300) {                                              // mstatus
+      this.csrs[0x300] = (this.csrs[0x300] & ~MSTATUS_WRITABLE) | (v & MSTATUS_WRITABLE);
+      this.flushTlb();
+      return;
+    }
     if (addr === 0x100) {                                              // sstatus
       this.csrs[0x300] = (this.csrs[0x300] & ~SSTATUS_VISIBLE) | (v & SSTATUS_VISIBLE);
+      this.flushTlb();
       return;
     }
     if (addr === 0x104) {                                              // sie
@@ -410,14 +597,41 @@ class Cpu {
     const rd = (inst >>> 7) & 31;
     const imm = (inst & 0xFFF00000) >> 20;
     const addr = (this.x[(inst >>> 15) & 31] + imm) | 0;
+    let val;
     switch (f3) {
-      case 0: this.setX(rd, (this.bus.read8(addr) << 24) >> 24); break;   // lb
-      case 1: this.setX(rd, (this.bus.read16(addr) << 16) >> 16); break;  // lh
-      case 2: this.setX(rd, this.bus.read32(addr)); break;                // lw
-      case 4: this.setX(rd, this.bus.read8(addr)); break;                 // lbu
-      case 5: this.setX(rd, this.bus.read16(addr)); break;                // lhu
+      case 0: { // lb
+        const pa = this.translate(addr, 1);
+        if (pa === null) return;
+        val = (this.bus.read8(pa) << 24) >> 24;
+        break;
+      }
+      case 1: { // lh
+        const pa = this.translate(addr, 1);
+        if (pa === null) return;
+        val = (this.bus.read16(pa) << 16) >> 16;
+        break;
+      }
+      case 2: { // lw
+        const pa = this.translate(addr, 1);
+        if (pa === null) return;
+        val = this.bus.read32(pa);
+        break;
+      }
+      case 4: { // lbu
+        const pa = this.translate(addr, 1);
+        if (pa === null) return;
+        val = this.bus.read8(pa);
+        break;
+      }
+      case 5: { // lhu
+        const pa = this.translate(addr, 1);
+        if (pa === null) return;
+        val = this.bus.read16(pa);
+        break;
+      }
       default: return this.trap(CAUSE_ILLEGAL, inst);
     }
+    this.setX(rd, val);
     this.pc += 4;
   }
 
@@ -427,9 +641,24 @@ class Cpu {
     const addr = (this.x[rs1] + sImm(inst)) | 0;
     const v = this.x[(inst >>> 20) & 31];
     switch (f3) {
-      case 0: this.bus.write8(addr, v); break;
-      case 1: this.bus.write16(addr, v); break;
-      case 2: this.bus.write32(addr, v); break;
+      case 0: { // sb
+        const pa = this.translate(addr, 2);
+        if (pa === null) return;
+        this.bus.write8(pa, v);
+        break;
+      }
+      case 1: { // sh
+        const pa = this.translate(addr, 2);
+        if (pa === null) return;
+        this.bus.write16(pa, v);
+        break;
+      }
+      case 2: { // sw
+        const pa = this.translate(addr, 2);
+        if (pa === null) return;
+        this.bus.write32(pa, v);
+        break;
+      }
       default: return this.trap(CAUSE_ILLEGAL, inst);
     }
     this.pc += 4;
@@ -539,11 +768,18 @@ class Cpu {
           return;
         }
         case 0x105: this.pc += 4; return;                   // wfi
-        case 0x120:  // sfence.vma: no-op; traps in S/U when TVM=1
+        case 0x120: { // sfence.vma: traps in S/U when TVM=1, traps in U always
+          if (this.priv === PRIV_U) return this.trap(CAUSE_ILLEGAL, inst);
           if (this.priv !== PRIV_M && (this.csrs[0x300] & MSTATUS_TVM))
             return this.trap(CAUSE_ILLEGAL, inst);
+          const rs1 = (inst >>> 15) & 31;
+          const rs2 = (inst >>> 20) & 31;
+          const vaddr = rs1 === 0 ? null : this.x[rs1];
+          const asid = rs2 === 0 ? null : this.x[rs2];
+          this.flushTlb(vaddr, asid);
           this.pc += 4;
           return;
+        }
         default: return this.trap(CAUSE_ILLEGAL, inst);
       }
     }
@@ -576,4 +812,26 @@ class Cpu {
   }
 }
 
-module.exports = { Cpu, CSR_ADDRS, CAUSE_MISALIGNED_FETCH, CAUSE_ILLEGAL, CAUSE_BREAKPOINT, CAUSE_ECALL_M };
+module.exports = {
+  Cpu,
+  CSR_ADDRS,
+  CAUSE_MISALIGNED_FETCH,
+  CAUSE_ILLEGAL,
+  CAUSE_BREAKPOINT,
+  CAUSE_MISALIGNED_LOAD,
+  CAUSE_MISALIGNED_STORE,
+  CAUSE_ECALL_U,
+  CAUSE_ECALL_S,
+  CAUSE_ECALL_M,
+  CAUSE_FETCH_PAGE_FAULT,
+  CAUSE_LOAD_PAGE_FAULT,
+  CAUSE_STORE_PAGE_FAULT,
+  PTE_V,
+  PTE_R,
+  PTE_W,
+  PTE_X,
+  PTE_U,
+  PTE_G,
+  PTE_A,
+  PTE_D,
+};
