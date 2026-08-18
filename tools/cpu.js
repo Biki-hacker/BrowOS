@@ -150,12 +150,16 @@ class Cpu {
   csrRead(addr) {
     if (addr === 0xB00) return this.cycle;
     if (addr === 0xB02) return this.instCount;
-    return this.csrs[addr];
+    const v = this.csrs[addr];
+    return v === undefined ? 0 : v;
   }
 
   csrWrite(addr, v) {
     if (addr === 0xB00) { this.cycle = v | 0; return; }
     if (addr === 0xB02) { this.instCount = v | 0; return; }
+    if (addr === 0x001) v &= 0x1F;       // fflags: 5 bits
+    else if (addr === 0x002) v &= 0x7;   // frm: 3 bits
+    else if (addr === 0x003) v &= 0xFF;  // fcsr: 8 bits
     this.csrs[addr] = v | 0;
   }
 
@@ -192,8 +196,9 @@ class Cpu {
         const rd = (inst >>> 7) & 31;
         const rs1 = (inst >>> 15) & 31;
         const imm = (inst & 0xFFF00000) >> 20;
+        const base = this.x[rs1];
         this.setX(rd, this.pc + 4);
-        this.pc = (this.x[rs1] + imm) & ~1;
+        this.pc = (base + imm) & ~1;
         break;
       }
       case OP_B:
@@ -353,8 +358,14 @@ class Cpu {
         case 0x000: return this.trap(
           this.priv === 3 ? CAUSE_ECALL_M : this.priv === 1 ? CAUSE_ECALL_S : CAUSE_ECALL_U, 0);
         case 0x001: return this.trap(CAUSE_BREAKPOINT, 0);
-        case 0x102: this.pc = this.csrRead(0x141); return;  // sret
-        case 0x302: this.pc = this.csrRead(0x341); return;  // mret
+        case 0x102:  // sret
+          this.pc = this.csrRead(0x141);
+          this.priv = (this.csrRead(0x100) >>> 8) & 1;
+          return;
+        case 0x302:  // mret
+          this.pc = this.csrRead(0x341);
+          this.priv = (this.csrRead(0x300) >>> 11) & 3;
+          return;
         case 0x105: this.pc += 4; return;                   // wfi
         default: return this.trap(CAUSE_ILLEGAL, inst);
       }
@@ -364,7 +375,6 @@ class Cpu {
       const rd = (inst >>> 7) & 31;
       const rs1 = (inst >>> 15) & 31;
       const old = this.csrRead(csr);
-      if (old === undefined) return this.trap(CAUSE_ILLEGAL, inst);
       if (f3 & 4) {
         const zimm = rs1;
         if (CSR_READONLY.has(csr) && zimm !== 0) return this.trap(CAUSE_ILLEGAL, inst);
