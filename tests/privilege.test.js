@@ -27,6 +27,11 @@ const CLINT_MTIME = 0x0200BFF8;
 
 const PRIV_U = 0, PRIV_S = 1, PRIV_M = 3;
 
+function setMtimecmp(bus, lo) {
+  bus.write32(CLINT_MTIMECMP + 4, 0);
+  bus.write32(CLINT_MTIMECMP, lo);
+}
+
 function loadElf(bus, bytes) {
   const e_phoff = bytes.readUInt32LE(28);
   const e_phentsize = bytes.readUInt16LE(42);
@@ -72,8 +77,9 @@ nop
 test('ecall cause depends on privilege mode', () => {
   for (const [priv, cause] of [[PRIV_M, 11], [PRIV_S, 9], [PRIV_U, 8]]) {
     const { cpu } = make(handlerAsm('ecall\n'));
+    cpu.run(3);
     cpu.priv = priv;
-    cpu.run(4);
+    cpu.run(2);
     assert.strictEqual(cpu.csr('mcause'), cause, `priv=${priv}`);
     assert.strictEqual(cpu.csr('mepc'), 0x1000C);
     assert.strictEqual(cpu.priv, PRIV_M);
@@ -117,8 +123,9 @@ csrrs x7, mepc, x0
 csrrs x8, mcause, x0
 nop
 `);
+  cpu.run(3);
   cpu.priv = PRIV_U;
-  cpu.run(6);
+  cpu.run(3);
   assert.strictEqual(cpu.x[7], 0x1000C);
   assert.strictEqual(cpu.x[8], 2);
   assert.strictEqual(cpu.priv, PRIV_M);
@@ -157,19 +164,19 @@ test('wfi is a no-op for now', () => {
 
 test('mstatus/mie/mip are writable M-mode CSRs', () => {
   const { cpu } = execAsm(`
-addi x5, x0, 0x80
+li x5, 0x80
 csrrw x0, mie, x5
 csrrs x6, mie, x0
-addi x5, x0, 0x88
+li x5, 0xA02
 csrrw x0, mip, x5
 csrrs x7, mip, x0
 nop
-`, 6);
+`, 7);
   assert.strictEqual(cpu.x[6], 0x80);
-  assert.strictEqual(cpu.x[7], 0x88);
+  assert.strictEqual(cpu.x[7], 0xA02);
 });
 
-test('interrupt bit set in mcause when trap is an interrupt', { todo: 'Phase 3: interrupt framework' }, () => {
+test('interrupt bit set in mcause when trap is an interrupt', () => {
   const { cpu, bus } = make(handlerAsm('nop\n'));
   cpu.csrWrite(0x300, MSTATUS_MIE);
   cpu.csrWrite(0x304, MIP_MSIP);
@@ -179,7 +186,7 @@ test('interrupt bit set in mcause when trap is an interrupt', { todo: 'Phase 3: 
   assert.strictEqual(cpu.csr('mcause'), 0x80000000 | INT_MSI);
 });
 
-test('pending interrupt is not taken while global MIE is clear', { todo: 'Phase 3: interrupt framework' }, () => {
+test('pending interrupt is not taken while global MIE is clear', () => {
   const { cpu, bus } = make(handlerAsm('nop\n'));
   bus.write32(CLINT_MSIP, 1);
   cpu.run(3);
@@ -187,7 +194,7 @@ test('pending interrupt is not taken while global MIE is clear', { todo: 'Phase 
   assert.strictEqual(cpu.pc, 0x1000C);
 });
 
-test('pending interrupt is taken when MIE is set', { todo: 'Phase 3: interrupt framework' }, () => {
+test('pending interrupt is taken when MIE is set', () => {
   const { cpu, bus } = make(handlerAsm('nop\n'));
   cpu.csrWrite(0x300, MSTATUS_MIE);
   cpu.csrWrite(0x304, MIP_MSIP);
@@ -198,17 +205,18 @@ test('pending interrupt is taken when MIE is set', { todo: 'Phase 3: interrupt f
   assert.strictEqual(cpu.csr('mepc'), 0x1000C);
 });
 
-test('interrupt from S or U traps to M even with MIE clear', { todo: 'Phase 3: interrupt framework' }, () => {
+test('interrupt from S or U traps to M even with MIE clear', () => {
   const { cpu, bus } = make(handlerAsm('nop\n'));
-  cpu.priv = PRIV_U;
+  cpu.csrWrite(0x304, MIP_MSIP);
   cpu.run(3);
+  cpu.priv = PRIV_U;
   bus.write32(CLINT_MSIP, 1);
   cpu.run(2);
   assert.strictEqual(cpu.csr('mcause'), 0x80000000 | INT_MSI);
   assert.strictEqual(cpu.priv, PRIV_M);
 });
 
-test('trap entry saves MIE into MPIE and clears MIE', { todo: 'Phase 3: mstatus trap semantics' }, () => {
+test('trap entry saves MIE into MPIE and clears MIE', () => {
   const { cpu } = execAsm(`
 la x5, handler
 csrrw x0, mtvec, x5
@@ -224,16 +232,17 @@ nop
   assert.strictEqual((cpu.x[7] & MSTATUS_MPP) >>> 11, PRIV_M);
 });
 
-test('trap entry records previous privilege in MPP', { todo: 'Phase 3: mstatus trap semantics' }, () => {
+test('trap entry records previous privilege in MPP', () => {
   const { cpu } = make(handlerAsm('ecall\n'));
+  cpu.run(3);
   cpu.priv = PRIV_U;
-  cpu.run(4);
+  cpu.run(2);
   assert.strictEqual((cpu.csr('mstatus') & MSTATUS_MPP) >>> 11, PRIV_U);
 });
 
-test('mret restores MIE from MPIE and sets MPP to U', { todo: 'Phase 3: mstatus trap semantics' }, () => {
+test('mret restores MIE from MPIE and sets MPP to U', () => {
   const { cpu } = execAsm(`
-li x5, 0x1808
+li x5, 0x1888
 csrrw x0, mstatus, x5
 li x5, 0x10018
 csrrw x0, mepc, x5
@@ -246,7 +255,7 @@ nop
   assert.strictEqual((cpu.csr('mstatus') & MSTATUS_MPP) >>> 11, PRIV_U);
 });
 
-test('sret restores SIE from SPIE and sets SPP to U', { todo: 'Phase 3: mstatus trap semantics' }, () => {
+test('sret restores SIE from SPIE and sets SPP to U', () => {
   const { cpu } = execAsm(`
 li x5, 0x122
 csrrw x0, sstatus, x5
@@ -254,30 +263,32 @@ li x5, 0x10018
 csrrw x0, sepc, x5
 sret
 nop
-`, 7);
+`, 6);
   assert.strictEqual(cpu.pc, 0x10018);
   assert.strictEqual(cpu.csr('sstatus') & MSTATUS_SIE, MSTATUS_SIE);
   assert.strictEqual(cpu.csr('sstatus') & MSTATUS_SPIE, MSTATUS_SPIE);
   assert.strictEqual(cpu.csr('sstatus') & MSTATUS_SPP, 0);
 });
 
-test('mret from S or U is illegal', { todo: 'Phase 3: mstatus trap semantics' }, () => {
+test('mret from S or U is illegal', () => {
   for (const priv of [PRIV_S, PRIV_U]) {
     const { cpu } = make(handlerAsm('mret\n'));
+    cpu.run(3);
     cpu.priv = priv;
-    cpu.run(4);
+    cpu.run(2);
     assert.strictEqual(cpu.csr('mcause'), 2, `priv=${priv}`);
   }
 });
 
-test('sret from U is illegal', { todo: 'Phase 3: mstatus trap semantics' }, () => {
+test('sret from U is illegal', () => {
   const { cpu } = make(handlerAsm('sret\n'));
+  cpu.run(3);
   cpu.priv = PRIV_U;
-  cpu.run(4);
+  cpu.run(2);
   assert.strictEqual(cpu.csr('mcause'), 2);
 });
 
-test('sret from M is legal', { todo: 'Phase 3: mstatus trap semantics' }, () => {
+test('sret from M is legal', () => {
   const { cpu } = execAsm(`
 li x5, 0x10018
 csrrw x0, sepc, x5
@@ -287,54 +298,54 @@ nop
   assert.strictEqual(cpu.pc, 0x10018);
 });
 
-test('timer: mtime is free-running and mtimecmp is writable', { todo: 'Phase 3: CLINT timer' }, () => {
+test('timer: mtime is free-running and mtimecmp is writable', () => {
   const { cpu, bus } = make('nop\nnop\nnop\n');
-  bus.write32(CLINT_MTIMECMP, 1000);
+  setMtimecmp(bus, 1000);
   cpu.run(3);
   assert.strictEqual(bus.read32(CLINT_MTIMECMP), 1000);
   assert.ok(bus.read32(CLINT_MTIME) >= 3);
 });
 
-test('timer: MTIP reflects mtime >= mtimecmp in mip', { todo: 'Phase 3: CLINT timer' }, () => {
+test('timer: MTIP reflects mtime >= mtimecmp in mip', () => {
   const { cpu, bus } = make('nop\nnop\nnop\n');
-  bus.write32(CLINT_MTIMECMP, 1);
+  setMtimecmp(bus, 1);
   cpu.run(2);
   assert.strictEqual(cpu.csr('mip') & MIP_MTIP, MIP_MTIP);
 });
 
-test('timer interrupt traps with cause MTI when enabled', { todo: 'Phase 3: CLINT timer' }, () => {
+test('timer interrupt traps with cause MTI when enabled', () => {
   const { cpu, bus } = make(handlerAsm('nop\n'));
   cpu.csrWrite(0x300, MSTATUS_MIE);
   cpu.csrWrite(0x304, MIP_MTIP);
   cpu.run(3);
-  bus.write32(CLINT_MTIMECMP, 1);
-  cpu.run(2);
+  setMtimecmp(bus, 1);
+  cpu.run(1);
   assert.strictEqual(cpu.csr('mcause'), 0x80000000 | INT_MTI);
-  assert.strictEqual(cpu.pc, 0x1000C);
+  assert.strictEqual(cpu.pc, 0x10010);
 });
 
-test('timer interrupt is masked by clearing mie.MTIP', { todo: 'Phase 3: CLINT timer' }, () => {
+test('timer interrupt is masked by clearing mie.MTIP', () => {
   const { cpu, bus } = make(handlerAsm('nop\n'));
   cpu.csrWrite(0x300, MSTATUS_MIE);
   cpu.run(3);
-  bus.write32(CLINT_MTIMECMP, 1);
+  setMtimecmp(bus, 1);
   cpu.run(3);
   assert.strictEqual(cpu.csr('mcause'), 0);
   assert.strictEqual(cpu.pc, 0x10018);
 });
 
-test('interrupt priority: MTI beats MSI', { todo: 'Phase 3: interrupt framework' }, () => {
+test('interrupt priority: MSI beats MTI', () => {
   const { cpu, bus } = make(handlerAsm('nop\n'));
   cpu.csrWrite(0x300, MSTATUS_MIE);
   cpu.csrWrite(0x304, MIP_MTIP | MIP_MSIP);
   cpu.run(3);
   bus.write32(CLINT_MSIP, 1);
-  bus.write32(CLINT_MTIMECMP, 1);
-  cpu.run(2);
-  assert.strictEqual(cpu.csr('mcause'), 0x80000000 | INT_MTI);
+  setMtimecmp(bus, 1);
+  cpu.run(1);
+  assert.strictEqual(cpu.csr('mcause'), 0x80000000 | INT_MSI);
 });
 
-test('delegated ecall from U traps to S via stvec', { todo: 'Phase 3: delegation' }, () => {
+test('delegated ecall from U traps to S via stvec', () => {
   const { cpu } = make(`
 la x5, shandler
 csrrw x0, stvec, x5
@@ -347,15 +358,16 @@ csrrs x7, sepc, x0
 csrrs x8, scause, x0
 nop
 `);
+  cpu.run(5);
   cpu.priv = PRIV_U;
-  cpu.run(8);
+  cpu.run(3);
   assert.strictEqual(cpu.x[7], 0x10014);
   assert.strictEqual(cpu.x[8], 8);
   assert.strictEqual(cpu.priv, PRIV_S);
   assert.strictEqual(cpu.csr('mcause'), 0);
 });
 
-test('trap from M is never delegated', { todo: 'Phase 3: delegation' }, () => {
+test('trap from M is never delegated', () => {
   const { cpu } = make(handlerAsm('ecall\n'));
   cpu.csrWrite(0x302, 0xFFFFFFFF);
   cpu.run(4);
@@ -363,7 +375,7 @@ test('trap from M is never delegated', { todo: 'Phase 3: delegation' }, () => {
   assert.strictEqual(cpu.priv, PRIV_M);
 });
 
-test('delegated S-mode trap sets SPP and SPIE on entry', { todo: 'Phase 3: delegation' }, () => {
+test('delegated S-mode trap sets SPP and SPIE on entry', () => {
   const { cpu } = make(`
 la x5, shandler
 csrrw x0, stvec, x5
@@ -376,71 +388,98 @@ shandler:
 csrrs x7, sstatus, x0
 nop
 `);
+  cpu.run(6);
   cpu.priv = PRIV_U;
-  cpu.run(8);
+  cpu.run(2);
   assert.strictEqual(cpu.x[7] & MSTATUS_SIE, 0);
   assert.strictEqual(cpu.x[7] & MSTATUS_SPIE, MSTATUS_SPIE);
   assert.strictEqual(cpu.x[7] & MSTATUS_SPP, 0);
 });
 
-test('delegated timer interrupt goes to S with STI cause', { todo: 'Phase 3: delegation' }, () => {
-  const { cpu, bus } = make(`
+test('S-mode timer interrupt delivered via sip.STIP forwarding', () => {
+  const { cpu } = make(`
 la x5, shandler
 csrrw x0, stvec, x5
-addi x5, x0, 128
-csrrw x0, mideleg, x5
-addi x5, x0, 0x22
+li x5, 0x20
 csrrw x0, sie, x5
+li x5, 0x20
+csrrw x0, mideleg, x5
 csrrsi x0, sstatus, 2
-nop
+li x5, 0x20
+csrrs x0, sip, x5
+li x5, 0x800
+csrrs x0, mstatus, x5
+li x5, 0x10030
+csrrw x0, mepc, x5
+mret
+.word 0x00000000
 shandler:
 csrrs x7, sepc, x0
 csrrs x8, scause, x0
 nop
 `);
-  cpu.priv = PRIV_U;
-  cpu.run(9);
-  bus.write32(CLINT_MTIMECMP, 1);
-  cpu.run(3);
+  cpu.run(20);
   assert.strictEqual(cpu.x[8], 0x80000000 | INT_STI);
   assert.strictEqual(cpu.priv, PRIV_S);
 });
 
-test('M-mode CSR access from S traps illegal', { todo: 'Phase 3: CSR access control' }, () => {
+test('mideleg MTI bit delegates MTIP to S where it can never be enabled', () => {
+  const { cpu, bus } = make(`
+la x5, mhandler
+csrrw x0, mtvec, x5
+li x5, 0x80
+csrrw x0, mideleg, x5
+csrrw x0, mie, x5
+nop
+mhandler:
+nop
+`);
+  cpu.run(6);
+  cpu.priv = PRIV_U;
+  setMtimecmp(bus, 1);
+  cpu.run(2);
+  assert.strictEqual(cpu.csr('mcause'), 0);
+  assert.strictEqual(cpu.priv, PRIV_U);
+  assert.strictEqual(cpu.pc, 0x10020);
+});
+
+test('M-mode CSR access from S traps illegal', () => {
   for (const csr of ['mstatus', 'mie', 'mepc', 'mtvec']) {
     const { cpu } = make(handlerAsm(`csrrw x0, ${csr}, x6\n`));
+    cpu.run(3);
     cpu.x[6] = 1;
     cpu.priv = PRIV_S;
-    cpu.run(4);
+    cpu.run(2);
     assert.strictEqual(cpu.csr('mcause'), 2, `csr=${csr}`);
   }
 });
 
-test('S-mode CSR access from U traps illegal', { todo: 'Phase 3: CSR access control' }, () => {
+test('S-mode CSR access from U traps illegal', () => {
   for (const csr of ['sstatus', 'sie', 'sepc', 'stvec']) {
     const { cpu } = make(handlerAsm(`csrrw x0, ${csr}, x6\n`));
+    cpu.run(3);
     cpu.x[6] = 1;
     cpu.priv = PRIV_U;
-    cpu.run(4);
+    cpu.run(2);
     assert.strictEqual(cpu.csr('mcause'), 2, `csr=${csr}`);
   }
 });
 
-test('sstatus shadows mstatus S bits', { todo: 'Phase 3: CSR access control' }, () => {
+test('sstatus shadows mstatus S bits', () => {
   const { cpu } = execAsm(`
 li x5, 0x42202
 csrrw x0, sstatus, x5
 csrrs x6, sstatus, x0
 csrrs x7, mstatus, x0
 nop
-`, 4);
+`, 5);
   assert.strictEqual(cpu.x[6] & SSTATUS_VISIBLE, 0x40002);
   assert.strictEqual(cpu.x[6] & ~SSTATUS_VISIBLE, 0);
   assert.strictEqual(cpu.x[7] & SSTATUS_VISIBLE, 0x40002);
   assert.strictEqual(cpu.x[7] & ~SSTATUS_VISIBLE, 0);
 });
 
-test('sstatus read zeroes M-only bits', { todo: 'Phase 3: CSR access control' }, () => {
+test('sstatus read zeroes M-only bits', () => {
   const { cpu } = execAsm(`
 addi x5, x0, 0x308
 csrrw x0, mstatus, x5
@@ -450,7 +489,7 @@ nop
   assert.strictEqual(cpu.x[6], MSTATUS_SPP);
 });
 
-test('sie and sip expose only S interrupt bits', { todo: 'Phase 3: CSR access control' }, () => {
+test('sie and sip expose only S interrupt bits', () => {
   const { cpu } = execAsm(`
 li x5, 0xAAA
 csrrw x0, mie, x5
@@ -464,7 +503,7 @@ nop
   assert.strictEqual(cpu.x[7], 0x555 & S_IRQ_MASK);
 });
 
-test('sie write propagates to mie', { todo: 'Phase 3: CSR access control' }, () => {
+test('sie write propagates to mie', () => {
   const { cpu } = execAsm(`
 addi x5, x0, 0x22
 csrrw x0, sie, x5
@@ -474,13 +513,14 @@ nop
   assert.strictEqual(cpu.x[6], 0x22);
 });
 
-test('mtvec vectored mode: interrupt jumps to base + 4 * cause', { todo: 'Phase 3: vectored mtvec' }, () => {
+test('mtvec vectored mode: interrupt jumps to base + 4 * cause', () => {
   const { cpu, bus } = make(`
 la x5, base
 addi x5, x5, 1
 csrrw x0, mtvec, x5
 csrrsi x0, mstatus, 8
-csrrsi x0, mie, 128
+li x5, 128
+csrrw x0, mie, x5
 nop
 base:
 .word 0x00000000
@@ -493,13 +533,13 @@ base:
 .word 0x00000000
 nop
 `);
-  bus.write32(CLINT_MTIMECMP, 1);
-  cpu.run(7);
-  assert.strictEqual(cpu.pc, 0x10018 + 4 * INT_MTI);
+  setMtimecmp(bus, 1);
+  cpu.run(8);
+  assert.strictEqual(cpu.pc, 0x10020 + 4 * INT_MTI);
   assert.strictEqual(cpu.csr('mcause'), 0x80000000 | INT_MTI);
 });
 
-test('mtvec vectored mode: exception still jumps to base', { todo: 'Phase 3: vectored mtvec' }, () => {
+test('mtvec vectored mode: exception still jumps to base', () => {
   const { cpu } = execAsm(`
 la x5, base
 addi x5, x5, 1
@@ -510,13 +550,13 @@ base:
 nop
 `, 5);
   assert.strictEqual(cpu.csr('mcause'), 2);
-  assert.strictEqual(cpu.pc, 0x10014);
+  assert.strictEqual(cpu.pc, 0x10018);
 });
 
-test('mip reflects pending timer and software interrupts', { todo: 'Phase 3: CLINT timer' }, () => {
+test('mip reflects pending timer and software interrupts', () => {
   const { cpu, bus } = make('nop\nnop\n');
   bus.write32(CLINT_MSIP, 1);
-  bus.write32(CLINT_MTIMECMP, 1);
+  setMtimecmp(bus, 1);
   cpu.run(2);
   assert.strictEqual(cpu.csr('mip') & (MIP_MSIP | MIP_MTIP), MIP_MSIP | MIP_MTIP);
 });

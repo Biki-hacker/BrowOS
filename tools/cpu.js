@@ -11,19 +11,40 @@ const CAUSE_ECALL_U = 8;
 const CAUSE_ECALL_S = 9;
 const CAUSE_ECALL_M = 11;
 
+const INT_SSI = 1, INT_MSI = 3, INT_STI = 5, INT_MTI = 7, INT_SEI = 9, INT_MEI = 11;
+const MIP_SSIP = 1 << INT_SSI, MIP_MSIP = 1 << INT_MSI, MIP_STIP = 1 << INT_STI,
+      MIP_MTIP = 1 << INT_MTI, MIP_SEIP = 1 << INT_SEI, MIP_MEIP = 1 << INT_MEI;
+const S_IRQ_MASK = MIP_SSIP | MIP_STIP | MIP_SEIP;
+const IRQ_MASK = MIP_SSIP | MIP_MSIP | MIP_STIP | MIP_MTIP | MIP_SEIP | MIP_MEIP;
+const IRQ_PRIORITY = [INT_MEI, INT_MSI, INT_MTI, INT_SEI, INT_SSI, INT_STI];
+const DEVICE_IRQ_MASK = MIP_MSIP | MIP_MTIP;
+
+const MSTATUS_SIE = 1 << 1, MSTATUS_MIE = 1 << 3, MSTATUS_SPIE = 1 << 5,
+      MSTATUS_MPIE = 1 << 7, MSTATUS_SPP = 1 << 8, MSTATUS_MPP = 3 << 11,
+      MSTATUS_SUM = 1 << 18, MSTATUS_MXR = 1 << 19;
+const SSTATUS_VISIBLE = MSTATUS_SIE | MSTATUS_SPIE | MSTATUS_SPP | MSTATUS_SUM | MSTATUS_MXR;
+
+const PRIV_U = 0, PRIV_S = 1, PRIV_M = 3;
+
 const MISA_RV32IM = 0x40001100;
 
 const CSR_ADDRS = {
   sstatus: 0x100, sie: 0x104, stvec: 0x105, scounteren: 0x106,
   sscratch: 0x140, sepc: 0x141, scause: 0x142, stval: 0x143, sip: 0x144,
   satp: 0x180,
-  mstatus: 0x300, misa: 0x301, mie: 0x304, mtvec: 0x305, mcounteren: 0x306,
+  mstatus: 0x300, misa: 0x301, medeleg: 0x302, mideleg: 0x303, mie: 0x304,
+  mtvec: 0x305, mcounteren: 0x306,
   mscratch: 0x340, mepc: 0x341, mcause: 0x342, mtval: 0x343, mip: 0x344,
   mcycle: 0xB00, minstret: 0xB02,
   mvendorid: 0xF11, marchid: 0xF12, mimpid: 0xF13, mhartid: 0xF14,
 };
 
 const CSR_READONLY = new Set([0x301, 0xF11, 0xF12, 0xF13, 0xF14]);
+
+function csrLevel(addr) {
+  const lv = (addr >>> 8) & 3;
+  return lv === 0 ? PRIV_U : lv === 1 ? PRIV_S : PRIV_M;
+}
 
 function jalImm(inst) {
   const v = ((inst & 0x80000000) >>> 11) | ((inst & 0x7FE00000) >>> 20) |
@@ -69,6 +90,9 @@ class Cpu {
     this.bus = bus;
     this.resetPc = (opts.pc !== undefined ? opts.pc : 0) | 0;
     this.trace = opts.trace || null;
+    const { Clint } = require('./mem.js');
+    this.timer = opts.timer || new Clint();
+    this.timer.attach(bus);
     this.reset();
   }
 
@@ -100,16 +124,21 @@ class Cpu {
 
   step() {
     if (this.halted) return false;
-    const inst = this.fetch32(this.pc);
-    if (inst === null) {
-      if (this.halted) return false;
-      this.cycle++;
-      this.instCount++;
+    this.timer.tick();
+    this.cycle++;
+    this.instCount++;
+    const intr = this.pendingInterrupt();
+    if (intr) {
+      this.trap(intr.cause, 0, true);
       if (this.trace) this.trace(this, 0);
       return true;
     }
-    this.cycle++;
-    this.instCount++;
+    const inst = this.fetch32(this.pc);
+    if (inst === null) {
+      if (this.halted) return false;
+      if (this.trace) this.trace(this, 0);
+      return true;
+    }
     if (this.trace) this.trace(this, inst);
     this.exec(inst);
     return true;
@@ -132,22 +161,93 @@ class Cpu {
     this.haltReason = 'stop';
   }
 
-  trap(cause, tval) {
+  mipPending() {
+    const live = (this.timer.msipSet ? MIP_MSIP : 0) |
+                 (this.timer.mtimeFired ? MIP_MTIP : 0);
+    return (this.csrs[0x344] & ~DEVICE_IRQ_MASK) | live;
+  }
+
+  pendingInterrupt() {
+    const mip = this.mipPending();
+    if (!(mip & IRQ_MASK)) return null;
+    const mie = this.csrs[0x304];
+    const sie = mie & S_IRQ_MASK;
+    const mstatus = this.csrs[0x300];
+    const mideleg = this.csrs[0x303];
+    for (const i of IRQ_PRIORITY) {
+      const bit = 1 << i;
+      if (!(mip & bit)) continue;
+      const target = (mideleg & bit) ? PRIV_S : PRIV_M;
+      if (target === PRIV_M) {
+        if (!(mie & bit)) continue;
+        if (this.priv === PRIV_M && !(mstatus & MSTATUS_MIE)) continue;
+      } else {
+        if (!(sie & bit)) continue;
+        if (this.priv === PRIV_S && !(mstatus & MSTATUS_SIE)) continue;
+      }
+      if (this.priv > target) continue;
+      return { cause: i, target };
+    }
+    return null;
+  }
+
+  trap(cause, tval, isInterrupt = false) {
+    const prevPriv = this.priv;
+    const causeBits = isInterrupt ? (0x80000000 | cause) : cause;
+    let target = PRIV_M;
+    if (prevPriv !== PRIV_M &&
+        (isInterrupt ? this.csrs[0x303] : this.csrs[0x302]) & (1 << cause)) {
+      target = PRIV_S;
+    }
+    const mstatus = this.csrs[0x300];
+    if (target === PRIV_S) {
+      this.csrs[0x141] = this.pc;         // sepc
+      this.csrs[0x142] = causeBits;       // scause
+      this.csrs[0x143] = tval | 0;        // stval
+      const s = mstatus;
+      this.csrs[0x300] =
+        (s & ~(MSTATUS_SIE | MSTATUS_SPIE | MSTATUS_SPP)) |
+        (s & MSTATUS_SIE ? MSTATUS_SPIE : 0) | (prevPriv << 8);
+      this.priv = PRIV_S;
+      const stvec = this.csrs[0x105];
+      if (!stvec) {
+        this.halted = true;
+        this.haltReason = 'trap';
+        this.haltInfo = { cause: causeBits, tval: tval | 0, pc: this.pc, priv: 'S' };
+        return;
+      }
+      this.pc = this.vectorTarget(stvec, isInterrupt, cause);
+      return;
+    }
     this.csrs[0x341] = this.pc;   // mepc
-    this.csrs[0x342] = cause;     // mcause
+    this.csrs[0x342] = causeBits; // mcause
     this.csrs[0x343] = tval | 0;  // mtval
-    this.priv = 3;
+    const m = mstatus;
+    this.csrs[0x300] =
+      (m & ~(MSTATUS_MIE | MSTATUS_MPIE | MSTATUS_MPP)) |
+      (m & MSTATUS_MIE ? MSTATUS_MPIE : 0) | (prevPriv << 11);
+    this.priv = PRIV_M;
     const mtvec = this.csrs[0x305];
     if (!mtvec) {
       this.halted = true;
       this.haltReason = 'trap';
-      this.haltInfo = { cause, tval: tval | 0, pc: this.pc };
+      this.haltInfo = { cause: causeBits, tval: tval | 0, pc: this.pc, priv: 'M' };
       return;
     }
-    this.pc = mtvec & ~3;
+    this.pc = this.vectorTarget(mtvec, isInterrupt, cause);
+  }
+
+  vectorTarget(tvec, isInterrupt, cause) {
+    const mode = tvec & 3;
+    if (mode === 1 && isInterrupt) return ((tvec & ~3) + 4 * cause) | 0;
+    return tvec & ~3;
   }
 
   csrRead(addr) {
+    if (addr === 0x100) return this.csrs[0x300] & SSTATUS_VISIBLE;     // sstatus
+    if (addr === 0x104) return this.csrs[0x304] & S_IRQ_MASK;          // sie
+    if (addr === 0x144) return this.mipPending() & S_IRQ_MASK;         // sip
+    if (addr === 0x344) return this.mipPending();                      // mip
     if (addr === 0xB00) return this.cycle;
     if (addr === 0xB02) return this.instCount;
     const v = this.csrs[addr];
@@ -155,6 +255,22 @@ class Cpu {
   }
 
   csrWrite(addr, v) {
+    if (addr === 0x100) {                                              // sstatus
+      this.csrs[0x300] = (this.csrs[0x300] & ~SSTATUS_VISIBLE) | (v & SSTATUS_VISIBLE);
+      return;
+    }
+    if (addr === 0x104) {                                              // sie
+      this.csrs[0x304] = (this.csrs[0x304] & ~S_IRQ_MASK) | (v & S_IRQ_MASK);
+      return;
+    }
+    if (addr === 0x144) {                                              // sip
+      this.csrs[0x344] = (this.csrs[0x344] & ~S_IRQ_MASK) | (v & S_IRQ_MASK);
+      return;
+    }
+    if (addr === 0x344) {                                              // mip: device-driven bits stay live
+      this.csrs[0x344] = v & ~DEVICE_IRQ_MASK;
+      return;
+    }
     if (addr === 0xB00) { this.cycle = v | 0; return; }
     if (addr === 0xB02) { this.instCount = v | 0; return; }
     if (addr === 0x001) v &= 0x1F;       // fflags: 5 bits
@@ -358,20 +474,33 @@ class Cpu {
         case 0x000: return this.trap(
           this.priv === 3 ? CAUSE_ECALL_M : this.priv === 1 ? CAUSE_ECALL_S : CAUSE_ECALL_U, 0);
         case 0x001: return this.trap(CAUSE_BREAKPOINT, 0);
-        case 0x102:  // sret
-          this.pc = this.csrRead(0x141);
-          this.priv = (this.csrRead(0x100) >>> 8) & 1;
+        case 0x102: {  // sret
+          if (this.priv === PRIV_U) return this.trap(CAUSE_ILLEGAL, inst);
+          const s = this.csrs[0x300];
+          this.pc = this.csrs[0x141];
+          this.priv = (s >>> 8) & 1;
+          this.csrs[0x300] =
+            (s & ~(MSTATUS_SIE | MSTATUS_SPIE | MSTATUS_SPP)) |
+            (s & MSTATUS_SPIE ? MSTATUS_SIE : 0) | MSTATUS_SPIE;
           return;
-        case 0x302:  // mret
-          this.pc = this.csrRead(0x341);
-          this.priv = (this.csrRead(0x300) >>> 11) & 3;
+        }
+        case 0x302: {  // mret
+          if (this.priv !== PRIV_M) return this.trap(CAUSE_ILLEGAL, inst);
+          const m = this.csrs[0x300];
+          this.pc = this.csrs[0x341];
+          this.priv = (m >>> 11) & 3;
+          this.csrs[0x300] =
+            (m & ~(MSTATUS_MIE | MSTATUS_MPIE | MSTATUS_MPP)) |
+            (m & MSTATUS_MPIE ? MSTATUS_MIE : 0) | MSTATUS_MPIE;
           return;
+        }
         case 0x105: this.pc += 4; return;                   // wfi
         default: return this.trap(CAUSE_ILLEGAL, inst);
       }
     }
     if (f3 >= 1 && f3 <= 3 || f3 >= 5 && f3 <= 7) {
       const csr = inst >>> 20;
+      if (csrLevel(csr) > this.priv) return this.trap(CAUSE_ILLEGAL, inst);
       const rd = (inst >>> 7) & 31;
       const rs1 = (inst >>> 15) & 31;
       const old = this.csrRead(csr);

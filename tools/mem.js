@@ -4,10 +4,23 @@ class Bus {
   constructor(size = 16 * 1024 * 1024, offset = 0) {
     this.data = new Uint8Array(size);
     this.offset = offset;
+    this.devices = [];
   }
 
   get size() {
     return this.data.length;
+  }
+
+  mapDevice(base, size, io) {
+    this.devices.push({ base: base >>> 0, size, io });
+  }
+
+  findDevice(addr, len) {
+    const a = addr >>> 0;
+    for (const d of this.devices) {
+      if (a >= d.base && a + len <= d.base + d.size) return d;
+    }
+    return null;
   }
 
   check(addr, len) {
@@ -33,10 +46,12 @@ class Bus {
   }
 
   read32(addr) {
+    const d = this.findDevice(addr, 4);
+    if (d) return d.io.read32(addr) | 0;
     this.check(addr, 4);
-    const d = this.data;
+    const b = this.data;
     const p = (addr >>> 0) - (this.offset >>> 0);
-    return (d[p] | (d[p + 1] << 8) | (d[p + 2] << 16) | (d[p + 3] << 24)) | 0;
+    return (b[p] | (b[p + 1] << 8) | (b[p + 2] << 16) | (b[p + 3] << 24)) | 0;
   }
 
   write8(addr, v) {
@@ -53,13 +68,15 @@ class Bus {
   }
 
   write32(addr, v) {
+    const d = this.findDevice(addr, 4);
+    if (d) { d.io.write32(addr, v | 0); return; }
     this.check(addr, 4);
-    const d = this.data;
+    const b = this.data;
     const p = (addr >>> 0) - (this.offset >>> 0);
-    d[p] = v & 0xFF;
-    d[p + 1] = (v >>> 8) & 0xFF;
-    d[p + 2] = (v >>> 16) & 0xFF;
-    d[p + 3] = (v >>> 24) & 0xFF;
+    b[p] = v & 0xFF;
+    b[p + 1] = (v >>> 8) & 0xFF;
+    b[p + 2] = (v >>> 16) & 0xFF;
+    b[p + 3] = (v >>> 24) & 0xFF;
   }
 
   load(addr, bytes) {
@@ -80,4 +97,46 @@ class Bus {
   }
 }
 
-module.exports = { Bus };
+class Clint {
+  constructor() {
+    this.msip = 0;
+    this.mtimeLo = 0;
+    this.mtimeHi = 0;
+    this.mtimecmpLo = 0xFFFFFFFF;
+    this.mtimecmpHi = 0xFFFFFFFF;
+  }
+
+  attach(bus) {
+    bus.mapDevice(0x02000000, 4, {
+      read32: () => this.msip,
+      write32: (addr, v) => { this.msip = v & 1; },
+    });
+    bus.mapDevice(0x02004000, 8, {
+      read32: (addr) => (addr & 4) ? this.mtimecmpHi : this.mtimecmpLo,
+      write32: (addr, v) => {
+        if (addr & 4) this.mtimecmpHi = v >>> 0;
+        else this.mtimecmpLo = v >>> 0;
+      },
+    });
+    bus.mapDevice(0x0200BFF8, 8, {
+      read32: (addr) => (addr & 4) ? this.mtimeHi : this.mtimeLo,
+      write32: () => {},
+    });
+  }
+
+  tick() {
+    this.mtimeLo = (this.mtimeLo + 1) >>> 0;
+    if (this.mtimeLo === 0) this.mtimeHi = (this.mtimeHi + 1) >>> 0;
+  }
+
+  get msipSet() {
+    return this.msip !== 0;
+  }
+
+  get mtimeFired() {
+    return this.mtimeHi > this.mtimecmpHi ||
+           (this.mtimeHi === this.mtimecmpHi && this.mtimeLo >= this.mtimecmpLo);
+  }
+}
+
+module.exports = { Bus, Clint };
