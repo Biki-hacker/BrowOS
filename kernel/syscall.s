@@ -286,32 +286,63 @@ sys_close_pipe:
 
 sys_handle_stat:
   # a0 = path_ptr, a1 = stat_buf_ptr
-  addi sp, sp, -12
-  sw ra, 8(sp)
-  sw s0, 4(sp)
-  sw s1, 0(sp)
-  mv s1, a1        # stat_buf
-  li a0, 0
+  addi sp, sp, -16
+  sw ra, 12(sp)
+  sw s0, 8(sp)
+  sw s1, 4(sp)
+  mv s0, a0        # path_ptr
+  mv s1, a1        # stat_buf_ptr
+
+  # Check if root
+  lbu t0, 0(s0)
+  beqz t0, sys_stat_is_root
+  li t1, '/'
+  bne t0, t1, sys_stat_check_dot
+  lbu t2, 1(s0)
+  beqz t2, sys_stat_is_root
+  addi s0, s0, 1
+
+sys_stat_check_dot:
+  lbu t0, 0(s0)
+  li t1, '.'
+  bne t0, t1, sys_stat_do_lookup
+  lbu t2, 1(s0)
+  beqz t2, sys_stat_is_root
+
+sys_stat_do_lookup:
+  li a0, 0         # root dir inode
+  mv a1, s0        # path_ptr
   call fs_lookup
   li t0, -1
   beq a0, t0, sys_stat_notfound
+
   # Read inode
   call fs_read_inode
   la t0, fs_inode_buf
-  # Copy type (0) and size (4) into stat_buf
+  # Copy type (offset 0) and size (offset 4) into stat_buf
   lw t1, 0(t0)
   sw t1, 0(s1)     # stat.type
   lw t1, 4(t0)
   sw t1, 4(s1)     # stat.size
   li a0, 0
   j sys_stat_done
+
+sys_stat_is_root:
+  li t0, 2         # BRFS_INODE_DIR
+  sw t0, 0(s1)
+  li t0, 64
+  sw t0, 4(s1)
+  li a0, 0
+  j sys_stat_done
+
 sys_stat_notfound:
   li a0, -1
+
 sys_stat_done:
-  lw s1, 0(sp)
-  lw s0, 4(sp)
-  lw ra, 8(sp)
-  addi sp, sp, 12
+  lw s1, 4(sp)
+  lw s0, 8(sp)
+  lw ra, 12(sp)
+  addi sp, sp, 16
   ret
 
 sys_handle_mkdir:
@@ -319,24 +350,21 @@ sys_handle_mkdir:
   addi sp, sp, -16
   sw ra, 12(sp)
   sw s0, 8(sp)
-  mv s0, a0        # path_ptr
+  mv s0, a0
 
-  # Check if entry already exists
-  li a0, 0
-  mv a1, s0
-  call fs_lookup
-  li t0, -1
-  bne a0, t0, sys_mkdir_err
+  # Skip leading '/' if present
+  lbu t0, 0(s0)
+  li t1, '/'
+  bne t0, t1, sys_mkdir_do
+  addi s0, s0, 1
 
-  # Create directory: fs_create(parent=0, name=s0, type=BRFS_INODE_DIR=2)
-  li a0, 0
-  mv a1, s0
-  li a2, 2
+sys_mkdir_do:
+  li a0, 0         # parent inode 0
+  mv a1, s0        # dirname
+  li a2, 2         # BRFS_INODE_DIR
   call fs_create
   li t0, -1
   beq a0, t0, sys_mkdir_err
-
-  # Success: return 0
   li a0, 0
   j sys_mkdir_done
 
@@ -351,13 +379,25 @@ sys_mkdir_done:
 
 sys_handle_unlink:
   # a0 = path_ptr
-  addi sp, sp, -8
-  sw ra, 4(sp)
-  mv a1, a0
+  addi sp, sp, -16
+  sw ra, 12(sp)
+  sw s0, 8(sp)
+  mv s0, a0
+
+  # Skip leading '/' if present
+  lbu t0, 0(s0)
+  li t1, '/'
+  bne t0, t1, sys_unlink_do
+  addi s0, s0, 1
+
+sys_unlink_do:
   li a0, 0
+  mv a1, s0
   call fs_unlink
-  lw ra, 4(sp)
-  addi sp, sp, 8
+
+  lw s0, 8(sp)
+  lw ra, 12(sp)
+  addi sp, sp, 16
   ret
 
 sys_handle_exec:

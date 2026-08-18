@@ -8,6 +8,11 @@
 
 _start:
 sh_main:
+  # Initialize cwd path to "/"
+  la a0, sh_cwd_path
+  la a1, str_slash
+  call strcpy
+
   # Print welcome banner
   la a0, str_banner
   call puts
@@ -129,8 +134,68 @@ sh_try_uname:
   mv a0, s0
   la a1, cmd_uname
   call strcmp
-  bnez a0, sh_try_pwd
+  bnez a0, sh_try_cd
   la a0, str_uname_text
+  call puts
+  j sh_loop
+
+sh_try_cd:
+  # ─── Built-in: cd <dir> ─────────────────────────────────────────────
+  mv a0, s0
+  la a1, cmd_cd
+  li a2, 2
+  call strncmp
+  bnez a0, sh_try_pwd
+  addi a0, s0, 2
+sh_cd_sp:
+  lbu t0, 0(a0)
+  li t1, ' '
+  bne t0, t1, sh_cd_do
+  addi a0, a0, 1
+  j sh_cd_sp
+sh_cd_do:
+  beqz t0, sh_cd_root
+  li t1, '/'
+  bne t0, t1, sh_cd_check_dot
+  lbu t2, 1(a0)
+  beqz t2, sh_cd_root
+sh_cd_check_dot:
+  mv s1, a0            # s1 = dir path
+  la a1, stat_scratch
+  call stat
+  li t0, -1
+  beq a0, t0, sh_cd_err
+  la t0, stat_scratch
+  lw t1, 0(t0)         # stat.type
+  li t2, 2             # BRFS_INODE_DIR
+  bne t1, t2, sh_cd_not_dir
+  # Update cwd path string
+  lbu t0, 0(s1)
+  li t1, '/'
+  beq t0, t1, sh_cd_copy_abs
+  la a0, sh_cwd_path
+  li t0, '/'
+  sb t0, 0(a0)
+  addi a0, a0, 1
+  mv a1, s1
+  call strcpy
+  j sh_loop
+sh_cd_copy_abs:
+  la a0, sh_cwd_path
+  mv a1, s1
+  call strcpy
+  j sh_loop
+sh_cd_root:
+  la a0, sh_cwd_path
+  la a1, str_slash
+  call strcpy
+  j sh_loop
+sh_cd_not_dir:
+  la a0, str_cd_not_dir
+  call puts
+  j sh_loop
+sh_cd_err:
+  la a0, str_cd_err
   call puts
   j sh_loop
 
@@ -140,7 +205,7 @@ sh_try_pwd:
   la a1, cmd_pwd
   call strcmp
   bnez a0, sh_try_uptime
-  la a0, str_slash
+  la a0, sh_cwd_path
   call puts
   j sh_loop
 
@@ -245,7 +310,7 @@ sh_try_mkdir:
   la a1, cmd_mkdir
   li a2, 5
   call strncmp
-  bnez a0, sh_try_rm
+  bnez a0, sh_try_rmdir
   addi a0, s0, 5
 sh_mkdir_sp:
   lbu t0, 0(a0)
@@ -254,11 +319,58 @@ sh_mkdir_sp:
   addi a0, a0, 1
   j sh_mkdir_sp
 sh_mkdir_do:
+  beqz t0, sh_mkdir_usage
   call mkdir
   bnez a0, sh_mkdir_err
   j sh_loop
+sh_mkdir_usage:
+  la a0, str_mkdir_usage
+  call puts
+  j sh_loop
 sh_mkdir_err:
   la a0, str_mkdir_err
+  call puts
+  j sh_loop
+
+sh_try_rmdir:
+  # ─── Built-in: rmdir <dir> ──────────────────────────────────────────
+  mv a0, s0
+  la a1, cmd_rmdir
+  li a2, 5
+  call strncmp
+  bnez a0, sh_try_rm
+  addi a0, s0, 5
+sh_rmdir_sp:
+  lbu t0, 0(a0)
+  li t1, ' '
+  bne t0, t1, sh_rmdir_do
+  addi a0, a0, 1
+  j sh_rmdir_sp
+sh_rmdir_do:
+  beqz t0, sh_rmdir_usage
+  mv s1, a0
+  la a1, stat_scratch
+  call stat
+  li t0, -1
+  beq a0, t0, sh_rmdir_err
+  la t0, stat_scratch
+  lw t1, 0(t0)         # stat.type
+  li t2, 2             # BRFS_INODE_DIR
+  bne t1, t2, sh_rmdir_not_dir
+  mv a0, s1
+  call unlink
+  bnez a0, sh_rmdir_err
+  j sh_loop
+sh_rmdir_usage:
+  la a0, str_rmdir_usage
+  call puts
+  j sh_loop
+sh_rmdir_not_dir:
+  la a0, str_rmdir_not_dir
+  call puts
+  j sh_loop
+sh_rmdir_err:
+  la a0, str_rmdir_err
   call puts
   j sh_loop
 
@@ -277,8 +389,13 @@ sh_rm_sp:
   addi a0, a0, 1
   j sh_rm_sp
 sh_rm_do:
+  beqz t0, sh_rm_usage
   call unlink
   bnez a0, sh_rm_err
+  j sh_loop
+sh_rm_usage:
+  la a0, str_rm_usage
+  call puts
   j sh_loop
 sh_rm_err:
   la a0, str_rm_err
@@ -300,11 +417,16 @@ sh_touch_sp:
   addi a0, a0, 1
   j sh_touch_sp
 sh_touch_do:
+  beqz t0, sh_touch_usage
   li a1, 1         # create flag
   call open
   li t0, -1
   beq a0, t0, sh_touch_err
   call close
+  j sh_loop
+sh_touch_usage:
+  la a0, str_touch_usage
+  call puts
   j sh_loop
 sh_touch_err:
   la a0, str_touch_err
@@ -331,20 +453,19 @@ sh_kill_parse:
 sh_kill_digit_loop:
   lbu t0, 0(a0)
   beqz t0, sh_kill_do
-  li t1, ' '
-  beq t0, t1, sh_kill_do
   li t1, '0'
-  blt t0, t1, sh_kill_do
+  blt t0, t1, sh_kill_usage
   li t1, '9'
-  bgt t0, t1, sh_kill_do
+  bgt t0, t1, sh_kill_usage
+  # t2 = t2 * 10 + (t0 - '0')
+  li t3, 10
+  mul t2, t2, t3
   addi t0, t0, -48
-  li t1, 10
-  mul t2, t2, t1
   add t2, t2, t0
   addi a0, a0, 1
   j sh_kill_digit_loop
 sh_kill_do:
-  mv a0, t2        # pid
+  mv a0, t2
   li a1, 9         # SIGKILL
   call kill
   bnez a0, sh_kill_err
@@ -359,22 +480,23 @@ sh_kill_err:
   j sh_loop
 
 sh_try_globe:
-  # ─── Built-in: globe ─────────────────────────────────────────────────
+  # ─── Built-in: globe (3D BrowGPU Raytracer Demo) ──────────────────────
   mv a0, s0
   la a1, cmd_globe
   call strcmp
   bnez a0, sh_try_halt
+
   la a0, str_globe_msg
   call puts
-  # Dispatch 3D compute raytracer on BrowGPU
-  li a0, 3           # op = GPU_OP_DISPATCH_COMPUTE
-  li a1, 1           # kernel_id = 1 (raytrace_globe)
-  li a2, 10          # time
-  li a3, 0
+
+  # Dispatch 3D Globe Raytracer Compute Kernel on BrowGPU
+  # gpu_dispatch(kernel_id=1, param1=160, param2=120, param3=80)
+  li a0, 1         # GPU_KERNEL_GLOBE
+  li a1, 160       # sphere_x (center)
+  li a2, 120       # sphere_y (center)
+  li a3, 80        # sphere_radius
   call gpu_dispatch
-  # Present framebuffer
-  li a0, 4           # op = GPU_OP_PRESENT
-  call gpu_dispatch
+
   la a0, str_globe_done
   call puts
   j sh_loop
@@ -385,18 +507,21 @@ sh_try_halt:
   la a1, cmd_shutdown
   call strcmp
   beqz a0, sh_do_halt
-
   mv a0, s0
   la a1, cmd_reboot
   call strcmp
   beqz a0, sh_do_halt
-
   mv a0, s0
   la a1, cmd_exit
   call strcmp
   beqz a0, sh_do_halt
 
-  # Unknown command
+  # ─── Try Executable via BrFS ─────────────────────────────────────────
+  mv a0, s0
+  li a1, 0
+  call exec
+
+  # Exec failed / unknown command
   la a0, str_unknown
   call print
   mv a0, s0
@@ -424,9 +549,17 @@ str_ps_entry:    .asciz "    "
 str_ps_running:  .asciz "  tty1  R     sh"
 str_cat_usage:   .asciz "cat: missing file argument"
 str_cat_notfound:.asciz "cat: file not found"
+str_mkdir_usage: .asciz "mkdir: missing directory argument"
 str_mkdir_err:   .asciz "mkdir: failed to create directory"
+str_rmdir_usage: .asciz "rmdir: missing directory argument"
+str_rmdir_not_dir:.asciz "rmdir: not a directory"
+str_rmdir_err:   .asciz "rmdir: failed to remove directory"
+str_rm_usage:    .asciz "rm: missing file argument"
 str_rm_err:      .asciz "rm: failed to remove file"
+str_touch_usage: .asciz "touch: missing file argument"
 str_touch_err:   .asciz "touch: failed to create file"
+str_cd_err:      .asciz "cd: no such file or directory"
+str_cd_not_dir:  .asciz "cd: not a directory"
 str_ls_err:      .asciz "ls: failed to read directory"
 str_space_two:   .asciz "  "
 str_newline:     .asciz "\n"
@@ -439,6 +572,7 @@ str_halt_msg:    .asciz "System shutting down..."
 
 cmd_help:     .asciz "help"
 cmd_ls:       .asciz "ls"
+cmd_cd:       .asciz "cd"
 cmd_clear:    .asciz "clear"
 cmd_uname:    .asciz "uname"
 cmd_pwd:      .asciz "pwd"
@@ -447,6 +581,7 @@ cmd_ps:       .asciz "ps"
 cmd_echo:     .asciz "echo"
 cmd_cat:      .asciz "cat"
 cmd_mkdir:    .asciz "mkdir"
+cmd_rmdir:    .asciz "rmdir"
 cmd_rm:       .asciz "rm"
 cmd_touch:    .asciz "touch"
 cmd_kill:     .asciz "kill"
@@ -459,14 +594,16 @@ str_help_text:
   .ascii "Available commands:\n"
   .ascii "  help      - Display this help message\n"
   .ascii "  ls        - List directory contents\n"
-  .ascii "  clear     - Clear the terminal screen\n"
-  .ascii "  uname     - Print system information\n"
+  .ascii "  cd        - Change current directory\n"
   .ascii "  pwd       - Print current working directory\n"
-  .ascii "  echo      - Print arguments to standard output\n"
-  .ascii "  cat       - Concatenate and display file content\n"
   .ascii "  mkdir     - Create a directory\n"
+  .ascii "  rmdir     - Remove an empty directory\n"
   .ascii "  touch     - Create an empty file\n"
   .ascii "  rm        - Remove a file\n"
+  .ascii "  cat       - Concatenate and display file content\n"
+  .ascii "  echo      - Print arguments to standard output\n"
+  .ascii "  clear     - Clear the terminal screen\n"
+  .ascii "  uname     - Print system information\n"
   .ascii "  ps        - Report current process status\n"
   .ascii "  kill      - Terminate a process by PID\n"
   .ascii "  globe     - Compute and render 3D raytraced Earth on BrowGPU\n"
@@ -475,5 +612,7 @@ str_help_text:
 
 .section .bss
 .align 4
-line_buf: .zero 256
-cat_buf:  .zero 256
+sh_cwd_path:  .zero 128
+stat_scratch: .zero 32
+line_buf:     .zero 256
+cat_buf:      .zero 256
