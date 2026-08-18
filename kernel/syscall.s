@@ -24,6 +24,20 @@ syscall_dispatch:
   beq a7, t0, sys_handle_write
   li t0, 7  # SYS_READ
   beq a7, t0, sys_handle_read
+  li t0, 8  # SYS_OPEN
+  beq a7, t0, sys_handle_open
+  li t0, 9  # SYS_CLOSE
+  beq a7, t0, sys_handle_close
+  li t0, 10 # SYS_STAT
+  beq a7, t0, sys_handle_stat
+  li t0, 11 # SYS_MKDIR
+  beq a7, t0, sys_handle_mkdir
+  li t0, 12 # SYS_UNLINK
+  beq a7, t0, sys_handle_unlink
+  li t0, 13 # SYS_EXEC
+  beq a7, t0, sys_handle_exec
+  li t0, 15 # SYS_HALT
+  beq a7, t0, sys_handle_halt
 
   # Unknown syscall
   li a0, -1
@@ -71,8 +85,27 @@ sys_handle_write:
   beq a0, t0, sys_write_uart
   li t0, 2
   beq a0, t0, sys_write_uart
-  # Other fds: return count (stub for now)
-  mv a0, a2
+  # Other fds: write to file via BrFS (fd maps directly to inode_no - 3 for simple file fds)
+  addi sp, sp, -20
+  sw ra, 16(sp)
+  sw s0, 12(sp)
+  sw s1, 8(sp)
+  sw s2, 4(sp)
+  sw s3, 0(sp)
+  addi s0, a0, -3  # s0 = inode_no
+  mv s1, a1        # buf
+  mv s2, a2        # count
+  mv a0, s0
+  li a1, 0         # offset (append / overwrite at 0)
+  mv a2, s1
+  mv a3, s2
+  call fs_write
+  lw s3, 0(sp)
+  lw s2, 4(sp)
+  lw s1, 8(sp)
+  lw s0, 12(sp)
+  lw ra, 16(sp)
+  addi sp, sp, 20
   ret
 
 sys_write_uart:
@@ -104,8 +137,31 @@ sys_write_uart_done:
 sys_handle_read:
   # a0 = fd, a1 = buf_ptr, a2 = count
   # For fd 0 (stdin), read from UART
-  bnez a0, sys_read_other
-  # Read up to count bytes from UART
+  beqz a0, sys_read_uart
+  # Other fds: read from file via BrFS
+  addi sp, sp, -20
+  sw ra, 16(sp)
+  sw s0, 12(sp)
+  sw s1, 8(sp)
+  sw s2, 4(sp)
+  sw s3, 0(sp)
+  addi s0, a0, -3  # s0 = inode_no
+  mv s1, a1        # buf
+  mv s2, a2        # count
+  mv a0, s0
+  li a1, 0         # offset
+  mv a2, s1
+  mv a3, s2
+  call fs_read
+  lw s3, 0(sp)
+  lw s2, 4(sp)
+  lw s1, 8(sp)
+  lw s0, 12(sp)
+  lw ra, 16(sp)
+  addi sp, sp, 20
+  ret
+
+sys_read_uart:
   addi sp, sp, -12
   sw ra, 8(sp)
   sw s0, 4(sp)
@@ -132,6 +188,107 @@ sys_read_uart_done:
   addi sp, sp, 12
   ret
 
-sys_read_other:
+sys_handle_open:
+  # a0 = path_ptr, a1 = flags
+  # Look up file in root directory (parent inode 0)
+  addi sp, sp, -8
+  sw ra, 4(sp)
+  sw s0, 0(sp)
+  mv s0, a1        # flags
+  mv a1, a0        # path_ptr
+  li a0, 0         # root dir inode
+  call fs_lookup
+  li t0, -1
+  bne a0, t0, sys_open_found
+  # If not found and flag is write/create (flags & 1)
+  andi t1, s0, 1
+  beqz t1, sys_open_notfound
+  # Create file
+  li a0, 0
+  mv a1, a1
+  li a2, 1         # BRFS_INODE_FILE
+  call fs_create
+  li t0, -1
+  beq a0, t0, sys_open_notfound
+
+sys_open_found:
+  # fd = inode_no + 3 (0=stdin, 1=stdout, 2=stderr, 3+=files)
+  addi a0, a0, 3
+  j sys_open_ret
+
+sys_open_notfound:
+  li a0, -1
+
+sys_open_ret:
+  lw s0, 0(sp)
+  lw ra, 4(sp)
+  addi sp, sp, 8
+  ret
+
+sys_handle_close:
   li a0, 0
   ret
+
+sys_handle_stat:
+  # a0 = path_ptr, a1 = stat_buf_ptr
+  addi sp, sp, -12
+  sw ra, 8(sp)
+  sw s0, 4(sp)
+  sw s1, 0(sp)
+  mv s1, a1        # stat_buf
+  li a0, 0
+  call fs_lookup
+  li t0, -1
+  beq a0, t0, sys_stat_notfound
+  # Read inode
+  call fs_read_inode
+  la t0, fs_inode_buf
+  # Copy type (0) and size (4) into stat_buf
+  lw t1, 0(t0)
+  sw t1, 0(s1)     # stat.type
+  lw t1, 4(t0)
+  sw t1, 4(s1)     # stat.size
+  li a0, 0
+  j sys_stat_done
+sys_stat_notfound:
+  li a0, -1
+sys_stat_done:
+  lw s1, 0(sp)
+  lw s0, 4(sp)
+  lw ra, 8(sp)
+  addi sp, sp, 12
+  ret
+
+sys_handle_mkdir:
+  # a0 = path_ptr
+  addi sp, sp, -8
+  sw ra, 4(sp)
+  mv a1, a0
+  li a0, 0         # parent root
+  call fs_mkdir
+  lw ra, 4(sp)
+  addi sp, sp, 8
+  ret
+
+sys_handle_unlink:
+  # a0 = path_ptr
+  addi sp, sp, -8
+  sw ra, 4(sp)
+  mv a1, a0
+  li a0, 0
+  call fs_unlink
+  lw ra, 4(sp)
+  addi sp, sp, 8
+  ret
+
+sys_handle_exec:
+  j sys_exec
+
+sys_handle_halt:
+  la t0, tohost
+  li t1, 1
+  sw t1, 0(t0)
+  # Spin if still running
+sys_halt_spin:
+  wfi
+  j sys_halt_spin

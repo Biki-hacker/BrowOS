@@ -31,6 +31,10 @@ trap_init:
   li t0, 0x0020
   csrw sie, t0
 
+  # Permit supervisor mode to access user memory (sstatus.SUM = 1, bit 18)
+  li t0, 0x00040000
+  csrs sstatus, t0
+
   ret
 
 # trap_entry: Low-level interrupt/exception entry point.

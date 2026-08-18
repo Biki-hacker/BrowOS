@@ -71,7 +71,7 @@ const OP = {
   'fence.i': { fmt: 'sys', code: 0x0F }
 };
 
-const PSEUDO = new Set(['nop', 'li', 'la', 'mv', 'not', 'neg', 'ret', 'j', 'call', 'beqz', 'bnez', 'blez', 'bgez', 'bltz', 'bgtz', 'csrr', 'csrw', 'csrs', 'csrc', 'csrwi', 'csrsi', 'csrci']);
+const PSEUDO = new Set(['nop', 'li', 'la', 'mv', 'not', 'neg', 'ret', 'j', 'jr', 'call', 'beqz', 'bnez', 'blez', 'bgez', 'bltz', 'bgtz', 'csrr', 'csrw', 'csrs', 'csrc', 'csrwi', 'csrsi', 'csrci', 'rdcycle', 'rdtime', 'rdinstret']);
 
 // ---------------- lexer ----------------
 
@@ -401,6 +401,10 @@ function assemble(src, opts = {}) {
     switch (word) {
       case 'nop': emit({ kind: 'inst', size: 4, enc: 0x00000013 }); return;
       case 'ret': emit({ kind: 'inst', size: 4, enc: encI(0, 1, 0, 0, 0x67) }); return;
+      case 'jr': {
+        const rs = expectReg(toks[0], lineNo);
+        emit({ kind: 'inst', size: 4, enc: encI(0, rs, 0, 0, 0x67) }); return;
+      }
       case 'mv': {
         const rd = reg(); const rs = expectReg(toks[1], lineNo);
         emit({ kind: 'inst', size: 4, enc: encI(0, rs, 0, rd, 0x13) }); return;
@@ -464,6 +468,21 @@ function assemble(src, opts = {}) {
         const hiOffset = secObj.size;
         emit({ kind: 'inst', size: 4, enc: 0, patch: { type: 'pcrel_hi', tokens: symToks, rd, lineNo } });
         emit({ kind: 'inst', size: 4, enc: 0, patch: { type: 'pcrel_lo', tokens: symToks, rd, hiOffset, lineNo } });
+        return;
+      }
+      case 'rdcycle': {
+        const rd = reg();
+        emit({ kind: 'inst', size: 4, enc: encCsr(0xC00, 0, 2, rd, false) });
+        return;
+      }
+      case 'rdtime': {
+        const rd = reg();
+        emit({ kind: 'inst', size: 4, enc: encCsr(0xC01, 0, 2, rd, false) });
+        return;
+      }
+      case 'rdinstret': {
+        const rd = reg();
+        emit({ kind: 'inst', size: 4, enc: encCsr(0xC02, 0, 2, rd, false) });
         return;
       }
       case 'csrr': {

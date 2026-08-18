@@ -31,6 +31,7 @@ const KERNEL_PARTS = [
   'driver_uart.s',
   'driver_blk.s',
   'fs.s',
+  'exec.s',
   'main.s',
 ];
 

@@ -1,0 +1,248 @@
+# exec.s - ELF32 Executable Loader & sys_exec for BrowOS kernel.
+# Loads PT_LOAD segments from BrFS files into Sv32 user address spaces.
+
+.section .text
+.align 2
+.global elf_load
+.global sys_exec
+
+# elf_load(a0=inode_no, a1=pcb_ptr): Loads ELF32 binary into PCB's address space.
+# Returns a0 = 0 on success, -1 on invalid ELF, -2 on out-of-memory.
+elf_load:
+  addi sp, sp, -36
+  sw ra, 32(sp)
+  sw s0, 28(sp)
+  sw s1, 24(sp)
+  sw s2, 20(sp)
+  sw s3, 16(sp)
+  sw s4, 12(sp)
+  sw s5, 8(sp)
+  sw s6, 4(sp)
+  sw s7, 0(sp)
+
+  mv s0, a0        # s0 = inode_no
+  mv s1, a1        # s1 = pcb_ptr
+
+  # Read ELF header (52 bytes) into elf_hdr_scratch
+  mv a0, s0
+  li a1, 0         # offset 0
+  la a2, elf_hdr_scratch
+  li a3, 52
+  call fs_read
+  li t0, 52
+  bne a0, t0, elf_load_bad_hdr
+
+  # Verify ELF magic (\x7fELF = 0x464C457F)
+  la t0, elf_hdr_scratch
+  lw t1, 0(t0)
+  li t2, 0x464C457F
+  bne t1, t2, elf_load_bad_hdr
+
+  # Verify 32-bit (e_ident[4] == 1) and little-endian (e_ident[5] == 1)
+  lbu t1, 4(t0)
+  li t2, 1
+  bne t1, t2, elf_load_bad_hdr
+  lbu t1, 5(t0)
+  bne t1, t2, elf_load_bad_hdr
+
+  # Extract e_entry (offset 24), e_phoff (offset 28), e_phnum (offset 44)
+  lw s2, 24(t0)    # s2 = e_entry
+  lw s3, 28(t0)    # s3 = e_phoff
+  lhu s4, 44(t0)   # s4 = e_phnum
+
+  # Get process root table PA from pcb.satp
+  lw s5, 16(s1)    # s5 = root_pa
+
+  # Iterate through program headers
+  li s6, 0         # s6 = ph index
+elf_load_ph_loop:
+  bge s6, s4, elf_load_stack_setup
+
+  # Read 32-byte program header: offset = e_phoff + s6 * 32
+  slli t0, s6, 5
+  add a1, s3, t0
+  mv a0, s0
+  la a2, elf_ph_scratch
+  li a3, 32
+  call fs_read
+  li t0, 32
+  bne a0, t0, elf_load_bad_hdr
+
+  # Check p_type == 1 (PT_LOAD)
+  la t0, elf_ph_scratch
+  lw t1, 0(t0)
+  li t2, 1         # PT_LOAD
+  bne t1, t2, elf_load_ph_next
+
+  # Extract p_offset (4), p_vaddr (8), p_filesz (16), p_memsz (20), p_flags (24)
+  lw s7, 4(t0)     # s7 = p_offset
+  lw t1, 8(t0)     # t1 = p_vaddr
+  lw t2, 16(t0)    # t2 = p_filesz
+  lw t3, 20(t0)    # t3 = p_memsz
+  lw t4, 24(t0)    # t4 = p_flags
+
+  # Convert p_flags (PF_X=1, PF_W=2, PF_R=4) to Sv32 PTE flags
+  # Base: PTE_V(1) | PTE_U(0x10) | PTE_A(0x40) | PTE_D(0x80) = 0xD1
+  li a3, 0xD1
+  andi t5, t4, 1   # PF_X
+  beqz t5, elf_nofl_x
+  ori a3, a3, 0x08 # PTE_X
+elf_nofl_x:
+  andi t5, t4, 2   # PF_W
+  beqz t5, elf_nofl_w
+  ori a3, a3, 0x04 # PTE_W
+elf_nofl_w:
+  andi t5, t4, 4   # PF_R
+  beqz t5, elf_nofl_r
+  ori a3, a3, 0x02 # PTE_R
+elf_nofl_r:
+
+  # Load segment data page-by-page
+  # For each 4 KiB page: allocate frame, zero frame, read from file, map into Sv32
+  # Allocate physical frame for this segment page
+  # Save flags in scratch
+  la t0, elf_seg_flags
+  sw a3, 0(t0)
+  la t0, elf_seg_vaddr
+  sw t1, 0(t0)
+  la t0, elf_seg_filesz
+  sw t2, 0(t0)
+
+  call alloc_frame
+  beqz a0, elf_load_oom
+  mv t6, a0        # t6 = frame_pa
+
+  # Zero the frame
+  mv a0, t6
+  sw t6, 0(sp)
+  call zero_frame
+  lw t6, 0(sp)
+
+  # Read segment content from file into the frame
+  la t0, elf_seg_filesz
+  lw a3, 0(t0)     # count = filesz
+  beqz a3, elf_load_skip_read
+  mv a0, s0        # inode_no
+  mv a1, s7        # offset = p_offset
+  mv a2, t6        # dst = frame_pa
+  sw t6, 0(sp)
+  call fs_read
+  lw t6, 0(sp)
+
+elf_load_skip_read:
+  # Map virtual page at p_vaddr
+  mv a0, s5        # root_pa
+  la t0, elf_seg_vaddr
+  lw a1, 0(t0)     # va
+  mv a2, t6        # pa
+  la t0, elf_seg_flags
+  lw a3, 0(t0)     # flags
+  call vmm_map_page
+
+elf_load_ph_next:
+  addi s6, s6, 1
+  j elf_load_ph_loop
+
+elf_load_stack_setup:
+  # Allocate user stack page
+  call alloc_frame
+  beqz a0, elf_load_oom
+  mv t6, a0
+
+  # Zero stack page
+  mv a0, t6
+  sw t6, 0(sp)
+  call zero_frame
+  lw t6, 0(sp)
+
+  # Map user stack at USER_STACK_VA (0x7FFF0000)
+  mv a0, s5        # root_pa
+  li a1, USER_STACK_VA
+  mv a2, t6        # pa
+  li a3, PTE_USER_DATA # 0xD7 (V | R | W | U | A | D)
+  call vmm_map_page
+
+  # Configure trapframe
+  lw t0, 28(s1)    # pcb.tf
+  # Set tf.epc = e_entry
+  sw s2, 128(t0)
+  # Set tf.sp = USER_STACK_TOP (0x7FFFF000)
+  li t1, USER_STACK_TOP
+  sw t1, 8(t0)
+  # Set tf.sstatus = MSTATUS_SPIE (0x20) | SUM (0x40000) = 0x40020 (U-mode on sret, SUM=1)
+  li t1, 0x40020
+  sw t1, 132(t0)
+
+  li a0, 0
+  j elf_load_done
+
+elf_load_bad_hdr:
+  li a0, -1
+  j elf_load_done
+
+elf_load_oom:
+  li a0, -2
+
+elf_load_done:
+  lw s7, 0(sp)
+  lw s6, 4(sp)
+  lw s5, 8(sp)
+  lw s4, 12(sp)
+  lw s3, 16(sp)
+  lw s2, 20(sp)
+  lw s1, 24(sp)
+  lw s0, 28(sp)
+  lw ra, 32(sp)
+  addi sp, sp, 36
+  ret
+
+# sys_exec(a0=path_ptr, a1=argv_ptr): Replaces current process with new ELF binary.
+sys_exec:
+  addi sp, sp, -16
+  sw ra, 12(sp)
+  sw s0, 8(sp)
+  sw s1, 4(sp)
+  mv s0, a0        # path_ptr
+  mv s1, a1        # argv_ptr
+
+  # Lookup executable file in BrFS root (parent inode 0)
+  li a0, 0
+  mv a1, s0
+  call fs_lookup
+  li t0, -1
+  beq a0, t0, sys_exec_notfound
+  mv s0, a0        # s0 = inode_no
+
+  # Get current process PCB
+  la t0, current_proc
+  lw s1, 0(t0)
+  beqz s1, sys_exec_err
+
+  # Load ELF into current process
+  mv a0, s0
+  mv a1, s1
+  call elf_load
+  bnez a0, sys_exec_err
+
+  # Return 0 (execution resumes at new entrypoint via trap_return)
+  li a0, 0
+  j sys_exec_done
+
+sys_exec_notfound:
+sys_exec_err:
+  li a0, -1
+
+sys_exec_done:
+  lw s1, 4(sp)
+  lw s0, 8(sp)
+  lw ra, 12(sp)
+  addi sp, sp, 16
+  ret
+
+.section .bss
+.align 4
+elf_hdr_scratch: .zero 64
+elf_ph_scratch:  .zero 32
+elf_seg_flags:   .zero 4
+elf_seg_vaddr:   .zero 4
+elf_seg_filesz:  .zero 4

@@ -19,6 +19,7 @@ const KERNEL_PARTS = [
   'driver_uart.s',
   'driver_blk.s',
   'fs.s',
+  'exec.s',
   'main.s',
 ];
 
@@ -53,6 +54,8 @@ test('fs: kernel image exports all BrFS filesystem functions', () => {
     'blk_read_sector',
     'blk_write_sector',
     'blk_capacity',
+    'elf_load',
+    'sys_exec',
   ];
 
   for (const sym of expectedSymbols) {

@@ -164,11 +164,11 @@ proc_zero_tf:
   # Set tf.epc = 0x40000000 (offset 128)
   li t1, 0x40000000
   sw t1, 128(t0)
-  # Set tf.sp = 0x7FFFF000 (offset 8)
-  li t1, 0x7FFFF000
+  # Set tf.sp = USER_STACK_TOP (offset 8)
+  li t1, USER_STACK_TOP
   sw t1, 8(t0)
-  # Set tf.sstatus = MSTATUS_SPIE (0x20) (offset 132, U-mode with interrupts enabled on sret)
-  li t1, 0x20
+  # Set tf.sstatus = MSTATUS_SPIE (0x20) | SUM (0x40000) = 0x40020 (offset 132, U-mode on sret, SUM=1)
+  li t1, 0x40020
   sw t1, 132(t0)
 
   mv a0, s0

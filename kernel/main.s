@@ -229,6 +229,9 @@ kmain_heap_full:
   sw s2, 20(sp)
   la t0, kmain_saved_sp
   sw sp, 0(t0)
+  la t0, kmain_saved_ra
+  la t1, kmain_sched_returned
+  sw t1, 0(t0)
   call schedule
 .global kmain_sched_returned
 kmain_sched_returned:
@@ -262,6 +265,7 @@ kmain_sched_returned:
   sw t1, 0(t0)
   la t0, heap_free
   sw x0, 0(t0)
+  call vmm_init
 
   # TEST 11: UART transmit and receive
   li s0, 11
@@ -300,8 +304,8 @@ blk_test_fill:
   addi t1, t1, 1
   blt t1, t2, blk_test_fill
 
-  # Write sector 0 from RAM
-  li a0, 0
+  # Write sector 2047 from RAM
+  li a0, 2047
   li a1, 0x00300000
   call blk_write_sector
   bnez a0, kmain_fail
@@ -315,8 +319,8 @@ blk_test_clear:
   addi t1, t1, -1
   bnez t1, blk_test_clear
 
-  # Read sector 0 back into RAM
-  li a0, 0
+  # Read sector 2047 back into RAM
+  li a0, 2047
   li a1, 0x00300000
   call blk_read_sector
   bnez a0, kmain_fail
@@ -429,6 +433,47 @@ fs_verify_done:
   li t0, -1
   bne a0, t0, kmain_fail
 
+  # TEST 14: Check if /sh executable exists in root directory. If present, load and execute in U-mode!
+  li s0, 14
+  li a0, 0             # root dir inode
+  la a1, str_sh
+  call fs_lookup
+  li t0, -1
+  beq a0, t0, kmain_no_sh
+  mv s3, a0            # s3 = /sh inode
+
+  # Allocate user process for the shell
+  call proc_alloc
+  beqz a0, kmain_fail
+  mv s1, a0            # s1 = shell PCB
+
+  # Allocate virtual address space
+  call vmm_create_space
+  sw a0, 16(s1)        # pcb.satp = root_pa
+
+  # Load ELF binary
+  mv a0, s3
+  mv a1, s1
+  call elf_load
+  bnez a0, kmain_fail
+
+  # Mark RUNNABLE
+  li t0, 1             # PROC_RUNNABLE
+  sw t0, 0(s1)
+
+  # Hand off CPU to scheduler to run shell!
+  la t0, kmain_saved_sp
+  sw sp, 0(t0)
+  la t0, kmain_saved_ra
+  la t1, kmain_sched_returned_14
+  sw t1, 0(t0)
+  call schedule
+.global kmain_sched_returned_14
+kmain_sched_returned_14:
+  li t0, 1
+  j kmain_report
+
+kmain_no_sh:
   li t0, 1
   j kmain_report
 kmain_fail:
@@ -503,11 +548,14 @@ tohost: .word 0
 fromhost: .word 0
 .global kmain_saved_sp
 kmain_saved_sp: .word 0
+.global kmain_saved_ra
+kmain_saved_ra: .word 0
 
 str_dev:    .asciz "dev"
 str_tmp:    .asciz "tmp"
 str_hello:  .asciz "hello"
 str_browos: .asciz "BrowOS"
+str_sh:     .asciz "sh"
 
 .bss
 .align 12

@@ -113,6 +113,13 @@ sched_idle:
 
   # Restore sp to kmain stack and resume kmain!
   mv sp, s0
+  la t0, kmain_saved_ra
+  lw t1, 0(t0)
+  beqz t1, sched_default_ret
+  sw x0, 0(t0)
+  jr t1
+
+sched_default_ret:
   j kmain_sched_returned
 
 sched_found_process:

@@ -53,6 +53,14 @@
 .equ SYS_STAT,     10
 .equ SYS_MKDIR,    11
 .equ SYS_UNLINK,   12
+.equ SYS_EXEC,     13
+.equ SYS_DUP,      14
+.equ SYS_HALT,     15
+
+# User Virtual Addresses
+.equ USER_TEXT_VA,  0x40000000
+.equ USER_STACK_VA, 0x7FFFF000
+.equ USER_STACK_TOP,0x80000000
 
 # UART 16550A register offsets
 .equ UART_RBR,     0x00
