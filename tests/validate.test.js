@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
-const { runElfBinary, runSuite } = require('../tools/validate.js');
+const { runElfBinary, runSuite, TEST_SKIPS } = require('../tools/validate.js');
 
 const ROOT = path.join(__dirname, '..');
 const THIRD_PARTY = path.join(ROOT, 'third_party');
@@ -28,7 +28,15 @@ function runRiscvTests(prefix) {
   const files = fs.readdirSync(dir)
     .filter((f) => f.startsWith(prefix))
     .sort();
-  const results = files.map((f) => ({ file: f, ...runElfBinary(path.join(dir, f)) }));
+  const results = [];
+  for (const f of files) {
+    if (TEST_SKIPS[f]) {
+      results.push({ file: f, status: 'skip', reason: TEST_SKIPS[f] });
+      continue;
+    }
+    results.push({ file: f, ...runElfBinary(path.join(dir, f),
+      { priv: f.startsWith('rv32si') ? 1 : 3 }) });
+  }
   const pass = results.filter((r) => r.status === 'pass').length;
   const fail = results.filter((r) => r.status === 'fail').length;
   const timeout = results.filter((r) => r.status === 'timeout').length;
@@ -43,6 +51,16 @@ test('riscv-tests: rv32ui-p (42 binaries)', { timeout: 300000, skip }, () => {
 
 test('riscv-tests: rv32um-p (8 binaries)', { timeout: 300000, skip }, () => {
   const r = runRiscvTests('rv32um-p-');
+  assertClean(r);
+});
+
+test('riscv-tests: rv32mi-p (16 binaries)', { timeout: 300000, skip }, () => {
+  const r = runRiscvTests('rv32mi-p-');
+  assertClean(r);
+});
+
+test('riscv-tests: rv32si-p (6 binaries)', { timeout: 300000, skip }, () => {
+  const r = runRiscvTests('rv32si-p-');
   assertClean(r);
 });
 

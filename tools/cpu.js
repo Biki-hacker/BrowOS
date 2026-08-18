@@ -90,6 +90,7 @@ class Cpu {
   constructor(bus, opts = {}) {
     this.bus = bus;
     this.resetPc = (opts.pc !== undefined ? opts.pc : 0) | 0;
+    this.initPriv = opts.priv !== undefined ? opts.priv : 3;
     this.trace = opts.trace || null;
     const { Clint } = require('./mem.js');
     this.timer = opts.timer || new Clint();
@@ -100,7 +101,7 @@ class Cpu {
   reset() {
     this.x = new Int32Array(32);
     this.pc = this.resetPc;
-    this.priv = 3;
+    this.priv = this.initPriv;
     this.halted = false;
     this.haltReason = null;
     this.haltInfo = null;

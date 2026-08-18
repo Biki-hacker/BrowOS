@@ -9,6 +9,10 @@ const { readElf, loadSegments } = require('./elf.js');
 const DEFAULT_BUS_SIZE = 0x10000000; // 256 MiB
 const DEFAULT_MAX_STEPS = 20000000;
 
+const TEST_SKIPS = {
+  'rv32si-p-dirty': 'requires Sv32 MMU + PTE A/D tracking (Phase 5)',
+};
+
 function findSymbol(elf, name) {
   const s = elf.symbols[name];
   return s ? s.value : undefined;
@@ -171,7 +175,7 @@ function reportSuite(suite) {
   }
 }
 
-module.exports = { runElfBinary, runSuite, reportSuite };
+module.exports = { runElfBinary, runSuite, reportSuite, TEST_SKIPS };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
@@ -190,14 +194,22 @@ if (require.main === module) {
       const files = fs.readdirSync(dir).filter((f) => re.test(f)).sort();
       const results = [];
       for (const f of files) {
-        const r = runElfBinary(path.join(dir, f));
+        if (TEST_SKIPS[f]) {
+          results.push({ file: f, status: 'skip', reason: TEST_SKIPS[f] });
+          console.log('[skip] ' + f + ' (' + TEST_SKIPS[f] + ')');
+          continue;
+        }
+        const r = runElfBinary(path.join(dir, f),
+          { priv: f.startsWith('rv32si') ? 1 : 3 });
         results.push({ file: f, ...r });
         console.log('[' + r.status + '] ' + f +
           (r.tohost !== null ? ' tohost=' + r.tohost : '') +
           (r.error ? ' error=' + r.error : ''));
       }
       const pass = results.filter((r) => r.status === 'pass').length;
-      console.log('  -> pass ' + pass + ' / ' + results.length);
+      const skip = results.filter((r) => r.status === 'skip').length;
+      console.log('  -> pass ' + pass + ' / ' + results.length +
+        (skip ? ' (skip ' + skip + ')' : ''));
     } else if (arg.endsWith('.elf') || fs.statSync(arg).isFile()) {
       const r = runElfBinary(arg);
       console.log(JSON.stringify(r, null, 2));
