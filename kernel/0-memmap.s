@@ -7,7 +7,7 @@
 .equ FRAME_SIZE,   0x00001000
 .equ NFRAMES,      0x00010000
 .equ KERNEL_LINK,  0x00000000
-.equ KERNEL_FRAMES, 0x00000100
+.equ KERNEL_FRAMES, 0x00000200
 .equ KERNEL_MAX,   0x00100000
 
 # Kernel heap (kmalloc arena, 1 MiB)
@@ -25,3 +25,87 @@
 .equ GPU_CTRL_BASE, 0x10004000
 .equ GPU_CMD_BASE, 0x10005000
 .equ MMIO_END,     0xFFFFF000
+
+# Sv32 PTE flags
+.equ PTE_V,        0x01
+.equ PTE_R,        0x02
+.equ PTE_W,        0x04
+.equ PTE_X,        0x08
+.equ PTE_U,        0x10
+.equ PTE_G,        0x20
+.equ PTE_A,        0x40
+.equ PTE_D,        0x80
+.equ PTE_KERN_DATA, 0xC7
+.equ PTE_KERN_TEXT, 0xCB
+.equ PTE_USER_DATA, 0xD7
+.equ PTE_USER_TEXT, 0xDB
+
+# Syscall numbers
+.equ SYS_EXIT,     1
+.equ SYS_FORK,     2
+.equ SYS_YIELD,    3
+.equ SYS_SLEEP,    4
+.equ SYS_GETPID,   5
+.equ SYS_WRITE,    6
+.equ SYS_READ,     7
+
+# Process states
+.equ PROC_UNUSED,   0
+.equ PROC_RUNNABLE, 1
+.equ PROC_RUNNING,  2
+.equ PROC_SLEEPING, 3
+.equ PROC_ZOMBIE,   4
+
+# Max processes
+.equ MAX_PROCS,    16
+
+# Trapframe register offsets
+.equ TF_RA,        4
+.equ TF_SP,        8
+.equ TF_GP,        12
+.equ TF_TP,        16
+.equ TF_T0,        20
+.equ TF_T1,        24
+.equ TF_T2,        28
+.equ TF_S0,        32
+.equ TF_S1,        36
+.equ TF_A0,        40
+.equ TF_A1,        44
+.equ TF_A2,        48
+.equ TF_A3,        52
+.equ TF_A4,        56
+.equ TF_A5,        60
+.equ TF_A6,        64
+.equ TF_A7,        68
+.equ TF_S2,        72
+.equ TF_S3,        76
+.equ TF_S4,        80
+.equ TF_S5,        84
+.equ TF_S6,        88
+.equ TF_S7,        92
+.equ TF_S8,        96
+.equ TF_S9,        100
+.equ TF_S10,       104
+.equ TF_S11,       108
+.equ TF_T3,        112
+.equ TF_T4,        116
+.equ TF_T5,        120
+.equ TF_T6,        124
+.equ TF_EPC,       128
+.equ TF_STATUS,    132
+.equ TF_CAUSE,     136
+.equ TF_TVAL,      140
+.equ TF_SIZE,      144
+
+# PCB offsets
+.equ PCB_STATE,      0
+.equ PCB_PID,        4
+.equ PCB_PPID,       8
+.equ PCB_PRIORITY,   12
+.equ PCB_SATP,       16
+.equ PCB_KSTACK,     20
+.equ PCB_USTACK,     24
+.equ PCB_TF,         28
+.equ PCB_EXITCODE,   32
+.equ PCB_SLEEPTICKS, 36
+.equ PCB_SIZE,       40

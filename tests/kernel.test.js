@@ -16,7 +16,17 @@ const {
 } = require('../tools/memmap.js');
 
 const KERNEL_DIR = path.join(__dirname, '..', 'kernel');
-const KERNEL_PARTS = ['0-memmap.s', 'pmm.s', 'heap.s', 'main.s'];
+const KERNEL_PARTS = [
+  '0-memmap.s',
+  'pmm.s',
+  'heap.s',
+  'vmm.s',
+  'proc.s',
+  'sched.s',
+  'syscall.s',
+  'trap.s',
+  'main.s',
+];
 
 function buildKernel() {
   const src = KERNEL_PARTS

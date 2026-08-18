@@ -71,7 +71,7 @@ const OP = {
   'fence.i': { fmt: 'sys', code: 0x0F }
 };
 
-const PSEUDO = new Set(['nop', 'li', 'la', 'mv', 'not', 'neg', 'ret', 'j', 'call', 'beqz', 'bnez']);
+const PSEUDO = new Set(['nop', 'li', 'la', 'mv', 'not', 'neg', 'ret', 'j', 'call', 'beqz', 'bnez', 'blez', 'bgez', 'bltz', 'bgtz', 'csrr', 'csrw', 'csrs', 'csrc', 'csrwi', 'csrsi', 'csrci']);
 
 // ---------------- lexer ----------------
 
@@ -432,11 +432,17 @@ function assemble(src, opts = {}) {
         item.rd = rd;
         emit(item); return;
       }
-      case 'beqz': case 'bnez': {
+      case 'beqz': case 'bnez': case 'blez': case 'bgez': case 'bltz': case 'bgtz': {
         const rs = reg();
-        const op = word === 'beqz' ? 'beq' : 'bne';
+        let op, rs1, rs2;
+        if (word === 'beqz') { op = 'beq'; rs1 = rs; rs2 = 0; }
+        else if (word === 'bnez') { op = 'bne'; rs1 = rs; rs2 = 0; }
+        else if (word === 'blez') { op = 'bge'; rs1 = 0; rs2 = rs; }
+        else if (word === 'bgez') { op = 'bge'; rs1 = rs; rs2 = 0; }
+        else if (word === 'bltz') { op = 'blt'; rs1 = rs; rs2 = 0; }
+        else if (word === 'bgtz') { op = 'blt'; rs1 = 0; rs2 = rs; }
         const target = splitOperandTokens(toks, 1, lineNo);
-        const item = { kind: 'inst', size: 4, enc: 0, patch: { type: 'b', op, f3: OP[op].f3, rs1: rs, rs2: 0, tokens: target, lineNo } };
+        const item = { kind: 'inst', size: 4, enc: 0, patch: { type: 'b', op, f3: OP[op].f3, rs1, rs2, tokens: target, lineNo } };
         emit(item); return;
       }
       case 'li': {
@@ -458,6 +464,69 @@ function assemble(src, opts = {}) {
         const hiOffset = secObj.size;
         emit({ kind: 'inst', size: 4, enc: 0, patch: { type: 'pcrel_hi', tokens: symToks, rd, lineNo } });
         emit({ kind: 'inst', size: 4, enc: 0, patch: { type: 'pcrel_lo', tokens: symToks, rd, hiOffset, lineNo } });
+        return;
+      }
+      case 'csrr': {
+        const rd = reg();
+        const csrTok = toks[1];
+        const csr = csrTok && csrTok.type === 'tok' && CSRS[csrTok.value] !== undefined
+          ? CSRS[csrTok.value]
+          : evalOperand([csrTok], symbols, lineNo);
+        emit({ kind: 'inst', size: 4, enc: encCsr(csr, 0, 2, rd, false) });
+        return;
+      }
+      case 'csrw': {
+        const csrTok = toks[0];
+        const csr = csrTok && csrTok.type === 'tok' && CSRS[csrTok.value] !== undefined
+          ? CSRS[csrTok.value]
+          : evalOperand([csrTok], symbols, lineNo);
+        const rs = expectReg(toks[1], lineNo);
+        emit({ kind: 'inst', size: 4, enc: encCsr(csr, rs, 1, 0, false) });
+        return;
+      }
+      case 'csrs': {
+        const csrTok = toks[0];
+        const csr = csrTok && csrTok.type === 'tok' && CSRS[csrTok.value] !== undefined
+          ? CSRS[csrTok.value]
+          : evalOperand([csrTok], symbols, lineNo);
+        const rs = expectReg(toks[1], lineNo);
+        emit({ kind: 'inst', size: 4, enc: encCsr(csr, rs, 2, 0, false) });
+        return;
+      }
+      case 'csrc': {
+        const csrTok = toks[0];
+        const csr = csrTok && csrTok.type === 'tok' && CSRS[csrTok.value] !== undefined
+          ? CSRS[csrTok.value]
+          : evalOperand([csrTok], symbols, lineNo);
+        const rs = expectReg(toks[1], lineNo);
+        emit({ kind: 'inst', size: 4, enc: encCsr(csr, rs, 3, 0, false) });
+        return;
+      }
+      case 'csrwi': {
+        const csrTok = toks[0];
+        const csr = csrTok && csrTok.type === 'tok' && CSRS[csrTok.value] !== undefined
+          ? CSRS[csrTok.value]
+          : evalOperand([csrTok], symbols, lineNo);
+        const zimm = evalOperand([toks[1]], symbols, lineNo);
+        emit({ kind: 'inst', size: 4, enc: encCsr(csr, zimm, 5, 0, true) });
+        return;
+      }
+      case 'csrsi': {
+        const csrTok = toks[0];
+        const csr = csrTok && csrTok.type === 'tok' && CSRS[csrTok.value] !== undefined
+          ? CSRS[csrTok.value]
+          : evalOperand([csrTok], symbols, lineNo);
+        const zimm = evalOperand([toks[1]], symbols, lineNo);
+        emit({ kind: 'inst', size: 4, enc: encCsr(csr, zimm, 6, 0, true) });
+        return;
+      }
+      case 'csrci': {
+        const csrTok = toks[0];
+        const csr = csrTok && csrTok.type === 'tok' && CSRS[csrTok.value] !== undefined
+          ? CSRS[csrTok.value]
+          : evalOperand([csrTok], symbols, lineNo);
+        const zimm = evalOperand([toks[1]], symbols, lineNo);
+        emit({ kind: 'inst', size: 4, enc: encCsr(csr, zimm, 7, 0, true) });
         return;
       }
     }

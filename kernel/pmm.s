@@ -22,13 +22,20 @@ pmm_init:
   la t0, pmm_bitmap
   li t1, -1
   li t2, 0
-pmm_init_loop:
-  li t3, 32
-  bge t2, t3, pmm_init_done
+pmm_init_kernel_loop:
+  li t3, 64
+  bge t2, t3, pmm_init_free_loop
   add t4, t0, t2
   sw t1, 0(t4)
   addi t2, t2, 4
-  j pmm_init_loop
+  j pmm_init_kernel_loop
+pmm_init_free_loop:
+  li t3, 8192
+  bge t2, t3, pmm_init_done
+  add t4, t0, t2
+  sw x0, 0(t4)
+  addi t2, t2, 4
+  j pmm_init_free_loop
 pmm_init_done:
   la t0, pmm_hint
   li t1, KERNEL_FRAMES
