@@ -219,6 +219,25 @@ sys_handle_open:
   sw s1, 4(sp)
   mv s0, a1        # flags
   mv s1, a0        # path_ptr
+
+  # Check if path is root dir: "/" or "." or ""
+  lbu t0, 0(s1)
+  beqz t0, sys_open_is_root
+  li t1, '/'
+  bne t0, t1, sys_open_check_dot
+  lbu t2, 1(s1)
+  beqz t2, sys_open_is_root
+  # If starts with '/', skip leading '/' for root lookup
+  addi s1, s1, 1
+
+sys_open_check_dot:
+  lbu t0, 0(s1)
+  li t1, '.'
+  bne t0, t1, sys_open_do_lookup
+  lbu t2, 1(s1)
+  beqz t2, sys_open_is_root
+
+sys_open_do_lookup:
   li a0, 0         # root dir inode
   mv a1, s1        # path_ptr
   call fs_lookup
@@ -234,6 +253,10 @@ sys_handle_open:
   call fs_create
   li t0, -1
   beq a0, t0, sys_open_notfound
+  j sys_open_found
+
+sys_open_is_root:
+  li a0, 0         # root inode 0
 
 sys_open_found:
   # fd = inode_no + 3 (0=stdin, 1=stdout, 2=stderr, 3+=files)

@@ -97,17 +97,27 @@ elf_nofl_w:
   ori a3, a3, 0x02 # PTE_R
 elf_nofl_r:
 
-  # Load segment data page-by-page
-  # For each 4 KiB page: allocate frame, zero frame, read from file, map into Sv32
-  # Allocate physical frame for this segment page
-  # Save flags in scratch
+  # Save flags, starting VA, ending VA, file offset, and filesz
   la t0, elf_seg_flags
   sw a3, 0(t0)
-  la t0, elf_seg_vaddr
+  la t0, elf_seg_curr_va
   sw t1, 0(t0)
-  la t0, elf_seg_filesz
+  add t5, t1, t3   # end_va = p_vaddr + p_memsz
+  la t0, elf_seg_end_va
+  sw t5, 0(t0)
+  la t0, elf_seg_file_off
+  sw s7, 0(t0)
+  la t0, elf_seg_rem_filesz
   sw t2, 0(t0)
 
+elf_page_loop:
+  la t0, elf_seg_curr_va
+  lw t1, 0(t0)
+  la t0, elf_seg_end_va
+  lw t2, 0(t0)
+  bge t1, t2, elf_load_ph_next
+
+  # Allocate physical frame for this 4 KiB page
   call alloc_frame
   beqz a0, elf_load_oom
   mv t6, a0        # t6 = frame_pa
@@ -118,26 +128,55 @@ elf_nofl_r:
   call zero_frame
   lw t6, 0(sp)
 
-  # Read segment content from file into the frame
-  la t0, elf_seg_filesz
-  lw a3, 0(t0)     # count = filesz
-  beqz a3, elf_load_skip_read
+  # Check how many bytes to read from file for this page (min(rem_filesz, 4096))
+  la t0, elf_seg_rem_filesz
+  lw a3, 0(t0)     # a3 = rem_filesz
+  li t3, 4096
+  blt a3, t3, elf_read_sz_ok
+  li a3, 4096
+elf_read_sz_ok:
+  beqz a3, elf_page_skip_read
+
+  # Read a3 bytes from file into frame_pa
+  la t0, elf_seg_file_off
+  lw a1, 0(t0)     # offset
   mv a0, s0        # inode_no
-  mv a1, s7        # offset = p_offset
   mv a2, t6        # dst = frame_pa
   sw t6, 0(sp)
+  sw a3, 4(sp)
   call fs_read
+  lw a3, 4(sp)
   lw t6, 0(sp)
 
-elf_load_skip_read:
-  # Map virtual page at p_vaddr
+  # Advance file offset and reduce rem_filesz by a3
+  la t0, elf_seg_file_off
+  lw t1, 0(t0)
+  add t1, t1, a3
+  sw t1, 0(t0)
+
+  la t0, elf_seg_rem_filesz
+  lw t1, 0(t0)
+  sub t1, t1, a3
+  sw t1, 0(t0)
+
+elf_page_skip_read:
+  # Map virtual page at elf_seg_curr_va
   mv a0, s5        # root_pa
-  la t0, elf_seg_vaddr
+  la t0, elf_seg_curr_va
   lw a1, 0(t0)     # va
   mv a2, t6        # pa
   la t0, elf_seg_flags
   lw a3, 0(t0)     # flags
   call vmm_map_page
+
+  # Advance curr_va by 4096
+  la t0, elf_seg_curr_va
+  lw t1, 0(t0)
+  li t2, 4096
+  add t1, t1, t2
+  sw t1, 0(t0)
+
+  j elf_page_loop
 
 elf_load_ph_next:
   addi s6, s6, 1
@@ -241,8 +280,10 @@ sys_exec_done:
 
 .section .bss
 .align 4
-elf_hdr_scratch: .zero 64
-elf_ph_scratch:  .zero 32
-elf_seg_flags:   .zero 4
-elf_seg_vaddr:   .zero 4
-elf_seg_filesz:  .zero 4
+elf_hdr_scratch:    .zero 64
+elf_ph_scratch:     .zero 32
+elf_seg_flags:      .zero 4
+elf_seg_curr_va:    .zero 4
+elf_seg_end_va:     .zero 4
+elf_seg_file_off:   .zero 4
+elf_seg_rem_filesz: .zero 4
