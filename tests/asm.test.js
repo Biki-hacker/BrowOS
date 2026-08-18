@@ -141,8 +141,8 @@ test('pseudo instructions', () => {
   assert.strictEqual(w(r, 4), 0x00C0006F);
   // beqz x7, done: @20 → 28, diff 8 → encB(8,0,7,0): imm[4:1]=4<<8=0x400 | rs1=7<<15=0x38000 → 0x00038463
   assert.strictEqual(w(r, 5), 0x00038463);
-  // bnez x8, done: @24 → 28, diff 4 → encB(4,0,8,1): 0x200 | 0x40000 | 0x1000 → 0x00040263
-  assert.strictEqual(w(r, 6), 0x00040263);
+  // bnez x8, done: @24 → 28, diff 4 → encB(4,0,8,1): 0x200 | 0x40000 | 0x1000 | 0x63 → 0x00041263
+  assert.strictEqual(w(r, 6), 0x00041263);
   // call sub: @28 → 32, diff 4 → encJ(4,1): 2<<21=0x400000 | 0x80 → 0x004000EF
   assert.strictEqual(w(r, 7), 0x004000EF);
 });

@@ -436,7 +436,7 @@ function assemble(src, opts = {}) {
         const rs = reg();
         const op = word === 'beqz' ? 'beq' : 'bne';
         const target = splitOperandTokens(toks, 1, lineNo);
-        const item = { kind: 'inst', size: 4, enc: 0, patch: { type: 'b', op, rs1: rs, rs2: 0, tokens: target, lineNo } };
+        const item = { kind: 'inst', size: 4, enc: 0, patch: { type: 'b', op, f3: OP[op].f3, rs1: rs, rs2: 0, tokens: target, lineNo } };
         emit(item); return;
       }
       case 'li': {
@@ -662,7 +662,7 @@ function assemble(src, opts = {}) {
   if (opts.elf === false) {
     bytes = Buffer.concat([textBytes, dataBytes]);
   } else {
-    bytes = buildElf({ entry, base, textBytes, dataBytes, bssSize, textSize: sections['.text'].size, dataSize: sections['.data'].size, dataBase });
+    bytes = buildElf({ entry, base, textBytes, dataBytes, bssSize, textSize: sections['.text'].size, dataSize: sections['.data'].size, dataBase, symbols, globals });
   }
 
   return {
@@ -681,17 +681,43 @@ function assemble(src, opts = {}) {
 
 // ---------------- ELF32 writer ----------------
 
-function buildElf({ entry, base, textBytes, dataBytes, bssSize, textSize, dataSize, dataBase }) {
+function buildElf({ entry, base, textBytes, dataBytes, bssSize, textSize, dataSize, dataBase, symbols, globals }) {
   const SEG_OFF = 0x100; // program bytes start here (after headers)
   const ELF_HDR = 52;
   const PHDR = 32;
   const SHDR = 40;
+  const NSEC = 7;
 
   const prog = Buffer.concat([textBytes, dataBytes]);
-  const shstr = Buffer.from('\0.text\0.data\0.bss\0.shstrtab\0');
-  const shoff = SEG_OFF + prog.length;
+  const shstr = Buffer.from('\0.text\0.data\0.bss\0.shstrtab\0.symtab\0.strtab\0');
 
-  const f = Buffer.alloc(SEG_OFF + prog.length + 5 * SHDR + shstr.length);
+  const labels = [];
+  for (const [name, s] of symbols) {
+    if (s.kind !== 'label') continue;
+    let section = -1;
+    let vaddr = 0;
+    if (s.section === '.text') { section = 1; vaddr = base + s.offset; }
+    else if (s.section === '.data') { section = 2; vaddr = dataBase + s.offset; }
+    else if (s.section === '.bss') { section = 3; vaddr = dataBase + dataSize + s.offset; }
+    labels.push({ name, section, vaddr: vaddr >>> 0, bind: globals.has(name) ? 0x10 : 0x00 });
+  }
+  labels.sort((a, b) => (a.section - b.section) || (a.vaddr - b.vaddr));
+
+  const strParts = [Buffer.from('\0')];
+  const stOffsets = new Map();
+  for (const l of labels) {
+    stOffsets.set(l.name, strParts.reduce((n, p) => n + p.length, 0));
+    strParts.push(Buffer.from(l.name + '\0'));
+  }
+  const strtab = Buffer.concat(strParts);
+
+  const symtabSize = labels.length * 16;
+  const shoff = SEG_OFF + prog.length;
+  const shstrOff = shoff + NSEC * SHDR;
+  const symtabOff = shstrOff + shstr.length;
+  const strtabOff = symtabOff + symtabSize;
+
+  const f = Buffer.alloc(strtabOff + strtab.length);
 
   // e_ident
   f[0] = 0x7F; f[1] = 0x45; f[2] = 0x4C; f[3] = 0x46; // \x7fELF
@@ -714,7 +740,7 @@ function buildElf({ entry, base, textBytes, dataBytes, bssSize, textSize, dataSi
   u16(42, PHDR);          // e_phentsize
   u16(44, 1);             // e_phnum
   u16(46, SHDR);          // e_shentsize
-  u16(48, 5);             // e_shnum (null, .text, .data, .bss, .shstrtab)
+  u16(48, NSEC);          // e_shnum (null, .text, .data, .bss, .shstrtab, .symtab, .strtab)
   u16(50, 4);             // e_shstrndx
 
   // program header (PT_LOAD, one segment)
@@ -739,12 +765,27 @@ function buildElf({ entry, base, textBytes, dataBytes, bssSize, textSize, dataSi
   sh(1, 1, 1, 6, base, SEG_OFF, textSize, 4);                      // .text PROGBITS ALLOC|EXEC
   sh(2, 7, 1, 3, dataBase, SEG_OFF + textSize, dataSize, 4);       // .data PROGBITS ALLOC|WRITE
   sh(3, 13, 8, 3, dataBase + dataSize, SEG_OFF + textSize + dataSize, bssSize, 4); // .bss NOBITS
-  sh(4, 18, 3, 0, 0, shoff + 4 * SHDR, shstr.length, 1);           // .shstrtab STRTAB
+  sh(4, 18, 3, 0, 0, shstrOff, shstr.length, 1);                   // .shstrtab STRTAB
+  sh(5, 28, 2, 0, 0, symtabOff, symtabSize, 4);                    // .symtab SYMTAB
+  sh(6, 35, 8, 0, 0, strtabOff, strtab.length, 1);                 // .strtab STRTAB
 
   // program bytes
   prog.copy(f, SEG_OFF);
   // shstrtab
-  shstr.copy(f, shoff + 4 * SHDR);
+  shstr.copy(f, shstrOff);
+  // symtab
+  let so = symtabOff;
+  for (const l of labels) {
+    u32(so, stOffsets.get(l.name));
+    u32(so + 4, l.vaddr);
+    u32(so + 8, 0);
+    f[so + 12] = l.bind;
+    f[so + 13] = 0;
+    u16(so + 14, l.section);
+    so += 16;
+  }
+  // strtab
+  strtab.copy(f, strtabOff);
 
   return f;
 }

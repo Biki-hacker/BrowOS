@@ -58,7 +58,7 @@ function runElfBinary(filePath, opts = {}) {
   const offset = Math.min(...elf.segments.map((s) => s.vaddr));
   const bus = new Bus(opts.busSize || DEFAULT_BUS_SIZE, offset);
   loadSegments(bus, bytes, elf);
-  installDeviceWindow(bus, elf);
+  if (!opts.rawBus) installDeviceWindow(bus, elf);
 
   const tohost = findSymbol(elf, 'tohost');
   const fromhost = findSymbol(elf, 'fromhost');
