@@ -409,20 +409,18 @@ test('trap with no mtvec halts the cpu', () => {
   assert.strictEqual(cpu.csr('mepc'), 0x10000);
 });
 
-test('write to read-only CSR with nonzero value traps', () => {
+test('misa write is WARL: unsupported bits are cleared, write never traps', () => {
   const { cpu } = execAsm(`
-la x5, handler
-csrrw x0, mtvec, x5
 addi x6, x0, 1
 csrrw x0, misa, x6
+csrrs x7, misa, x0
+addi x6, x0, 0
+csrrw x0, misa, x6
+csrrs x8, misa, x0
 nop
-handler:
-csrrs x7, mepc, x0
-csrrs x8, mcause, x0
-nop
-`, 8);
-  assert.strictEqual(cpu.x[7], 0x10010);
-  assert.strictEqual(cpu.x[8], 2);
+`, 7);
+  assert.strictEqual(cpu.x[7], 0x40001100);
+  assert.strictEqual(cpu.x[8], 0x40001100);
 });
 
 test('ELF program reads data section', () => {
