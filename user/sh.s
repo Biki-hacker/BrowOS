@@ -40,8 +40,77 @@ sh_eval:
   mv a0, s0
   la a1, cmd_help
   call strcmp
-  bnez a0, sh_try_clear
+  bnez a0, sh_try_ls
   la a0, str_help_text
+  call puts
+  j sh_loop
+
+sh_try_ls:
+  # ─── Built-in: ls ────────────────────────────────────────────────────
+  mv a0, s0
+  la a1, cmd_ls
+  call strcmp
+  bnez a0, sh_try_clear
+
+  # Open root directory "/" (inode 0)
+  la a0, str_slash
+  li a1, 0         # read-only
+  call open
+  li t0, -1
+  beq a0, t0, sh_ls_err
+  mv s1, a0        # s1 = fd
+
+  # Read directory block into cat_buf
+  mv a0, s1
+  la a1, cat_buf
+  li a2, 256
+  call read
+  mv s2, a0        # bytes read
+
+  # Close fd
+  mv a0, s1
+  call close
+
+  # Scan 32-byte entries in cat_buf
+  li s3, 0         # offset
+sh_ls_loop:
+  bge s3, s2, sh_ls_done
+  la t0, cat_buf
+  add t0, t0, s3
+  lw t1, 0(t0)     # inode_no
+  li t2, -1
+  beq t1, t2, sh_ls_next
+  # Check if empty name
+  addi t3, t0, 4   # name ptr
+  lbu t4, 0(t3)
+  beqz t4, sh_ls_next
+  # Skip "." and ".."
+  li t5, '.'
+  bne t4, t5, sh_ls_print
+  lbu t4, 1(t3)
+  beqz t4, sh_ls_next
+  li t5, '.'
+  bne t4, t5, sh_ls_print
+  lbu t4, 2(t3)
+  beqz t4, sh_ls_next
+
+sh_ls_print:
+  mv a0, t3
+  call print
+  la a0, str_space_two
+  call print
+
+sh_ls_next:
+  addi s3, s3, 32
+  j sh_ls_loop
+
+sh_ls_done:
+  la a0, str_newline
+  call print
+  j sh_loop
+
+sh_ls_err:
+  la a0, str_ls_err
   call puts
   j sh_loop
 
@@ -358,6 +427,9 @@ str_cat_notfound:.asciz "cat: file not found"
 str_mkdir_err:   .asciz "mkdir: failed to create directory"
 str_rm_err:      .asciz "rm: failed to remove file"
 str_touch_err:   .asciz "touch: failed to create file"
+str_ls_err:      .asciz "ls: failed to read directory"
+str_space_two:   .asciz "  "
+str_newline:     .asciz "\n"
 str_kill_usage:  .asciz "kill: missing pid argument"
 str_kill_err:    .asciz "kill: process not found"
 str_globe_msg:   .asciz "BrowGPU: Computing 3D Raytraced Earth Globe..."
@@ -366,6 +438,7 @@ str_unknown:     .asciz "sh: command not found: "
 str_halt_msg:    .asciz "System shutting down..."
 
 cmd_help:     .asciz "help"
+cmd_ls:       .asciz "ls"
 cmd_clear:    .asciz "clear"
 cmd_uname:    .asciz "uname"
 cmd_pwd:      .asciz "pwd"
@@ -385,6 +458,7 @@ cmd_exit:     .asciz "exit"
 str_help_text:
   .ascii "Available commands:\n"
   .ascii "  help      - Display this help message\n"
+  .ascii "  ls        - List directory contents\n"
   .ascii "  clear     - Clear the terminal screen\n"
   .ascii "  uname     - Print system information\n"
   .ascii "  pwd       - Print current working directory\n"

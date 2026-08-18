@@ -132,9 +132,11 @@ test('shell: echo, uname, and pwd commands execute interactively', { timeout: 30
   assert.ok(output.includes('/'), 'pwd output must match');
 });
 
-test('shell: mkdir and touch filesystem commands work in shell', { timeout: 300000 }, () => {
-  const { output, tohost } = runShellSession('mkdir testdir\ntouch testfile\nshutdown\n');
+test('shell: mkdir, touch, and ls filesystem commands work in shell', { timeout: 300000 }, () => {
+  const { output, tohost } = runShellSession('mkdir mydir\ntouch myfile\nls\nshutdown\n');
   assert.ok(output.includes('browos$'), 'prompt must be displayed');
+  assert.ok(output.includes('mydir'), 'ls must list created directory mydir');
+  assert.ok(output.includes('myfile'), 'ls must list created file myfile');
   assert.equal(tohost, 1, 'shutdown command must write 1 to tohost');
 });
 

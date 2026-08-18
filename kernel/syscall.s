@@ -213,12 +213,14 @@ sys_read_uart_done:
 sys_handle_open:
   # a0 = path_ptr, a1 = flags
   # Look up file in root directory (parent inode 0)
-  addi sp, sp, -8
-  sw ra, 4(sp)
-  sw s0, 0(sp)
+  addi sp, sp, -16
+  sw ra, 12(sp)
+  sw s0, 8(sp)
+  sw s1, 4(sp)
   mv s0, a1        # flags
-  mv a1, a0        # path_ptr
+  mv s1, a0        # path_ptr
   li a0, 0         # root dir inode
+  mv a1, s1        # path_ptr
   call fs_lookup
   li t0, -1
   bne a0, t0, sys_open_found
@@ -227,7 +229,7 @@ sys_handle_open:
   beqz t1, sys_open_notfound
   # Create file
   li a0, 0
-  mv a1, a1
+  mv a1, s1
   li a2, 1         # BRFS_INODE_FILE
   call fs_create
   li t0, -1
@@ -242,9 +244,10 @@ sys_open_notfound:
   li a0, -1
 
 sys_open_ret:
-  lw s0, 0(sp)
-  lw ra, 4(sp)
-  addi sp, sp, 8
+  lw s1, 4(sp)
+  lw s0, 8(sp)
+  lw ra, 12(sp)
+  addi sp, sp, 16
   ret
 
 sys_handle_close:
@@ -290,13 +293,37 @@ sys_stat_done:
 
 sys_handle_mkdir:
   # a0 = path_ptr
-  addi sp, sp, -8
-  sw ra, 4(sp)
-  mv a1, a0
-  li a0, 0         # parent root
-  call fs_mkdir
-  lw ra, 4(sp)
-  addi sp, sp, 8
+  addi sp, sp, -16
+  sw ra, 12(sp)
+  sw s0, 8(sp)
+  mv s0, a0        # path_ptr
+
+  # Check if entry already exists
+  li a0, 0
+  mv a1, s0
+  call fs_lookup
+  li t0, -1
+  bne a0, t0, sys_mkdir_err
+
+  # Create directory: fs_create(parent=0, name=s0, type=BRFS_INODE_DIR=2)
+  li a0, 0
+  mv a1, s0
+  li a2, 2
+  call fs_create
+  li t0, -1
+  beq a0, t0, sys_mkdir_err
+
+  # Success: return 0
+  li a0, 0
+  j sys_mkdir_done
+
+sys_mkdir_err:
+  li a0, -1
+
+sys_mkdir_done:
+  lw s0, 8(sp)
+  lw ra, 12(sp)
+  addi sp, sp, 16
   ret
 
 sys_handle_unlink:
