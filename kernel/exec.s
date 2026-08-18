@@ -9,16 +9,18 @@
 # elf_load(a0=inode_no, a1=pcb_ptr): Loads ELF32 binary into PCB's address space.
 # Returns a0 = 0 on success, -1 on invalid ELF, -2 on out-of-memory.
 elf_load:
-  addi sp, sp, -36
-  sw ra, 32(sp)
-  sw s0, 28(sp)
-  sw s1, 24(sp)
-  sw s2, 20(sp)
-  sw s3, 16(sp)
-  sw s4, 12(sp)
-  sw s5, 8(sp)
-  sw s6, 4(sp)
-  sw s7, 0(sp)
+  addi sp, sp, -48
+  sw ra, 44(sp)
+  sw s0, 40(sp)
+  sw s1, 36(sp)
+  sw s2, 32(sp)
+  sw s3, 28(sp)
+  sw s4, 24(sp)
+  sw s5, 20(sp)
+  sw s6, 16(sp)
+  sw s7, 12(sp)
+  sw s8, 8(sp)
+  sw s9, 4(sp)
 
   mv s0, a0        # s0 = inode_no
   mv s1, a1        # s1 = pcb_ptr
@@ -120,43 +122,38 @@ elf_page_loop:
   # Allocate physical frame for this 4 KiB page
   call alloc_frame
   beqz a0, elf_load_oom
-  mv t6, a0        # t6 = frame_pa
+  mv s8, a0        # s8 = frame_pa
 
   # Zero the frame
-  mv a0, t6
-  sw t6, 0(sp)
+  mv a0, s8
   call zero_frame
-  lw t6, 0(sp)
 
   # Check how many bytes to read from file for this page (min(rem_filesz, 4096))
   la t0, elf_seg_rem_filesz
-  lw a3, 0(t0)     # a3 = rem_filesz
+  lw s9, 0(t0)     # s9 = rem_filesz
   li t3, 4096
-  blt a3, t3, elf_read_sz_ok
-  li a3, 4096
+  blt s9, t3, elf_read_sz_ok
+  li s9, 4096
 elf_read_sz_ok:
-  beqz a3, elf_page_skip_read
+  beqz s9, elf_page_skip_read
 
-  # Read a3 bytes from file into frame_pa
+  # Read s9 bytes from file into frame_pa
   la t0, elf_seg_file_off
   lw a1, 0(t0)     # offset
   mv a0, s0        # inode_no
-  mv a2, t6        # dst = frame_pa
-  sw t6, 0(sp)
-  sw a3, 4(sp)
+  mv a2, s8        # dst = frame_pa
+  mv a3, s9        # count = s9
   call fs_read
-  lw a3, 4(sp)
-  lw t6, 0(sp)
 
-  # Advance file offset and reduce rem_filesz by a3
+  # Advance file offset and reduce rem_filesz by s9
   la t0, elf_seg_file_off
   lw t1, 0(t0)
-  add t1, t1, a3
+  add t1, t1, s9
   sw t1, 0(t0)
 
   la t0, elf_seg_rem_filesz
   lw t1, 0(t0)
-  sub t1, t1, a3
+  sub t1, t1, s9
   sw t1, 0(t0)
 
 elf_page_skip_read:
@@ -164,7 +161,7 @@ elf_page_skip_read:
   mv a0, s5        # root_pa
   la t0, elf_seg_curr_va
   lw a1, 0(t0)     # va
-  mv a2, t6        # pa
+  mv a2, s8        # pa
   la t0, elf_seg_flags
   lw a3, 0(t0)     # flags
   call vmm_map_page
@@ -186,18 +183,16 @@ elf_load_stack_setup:
   # Allocate user stack page
   call alloc_frame
   beqz a0, elf_load_oom
-  mv t6, a0
+  mv s8, a0
 
   # Zero stack page
-  mv a0, t6
-  sw t6, 0(sp)
+  mv a0, s8
   call zero_frame
-  lw t6, 0(sp)
 
   # Map user stack at USER_STACK_VA (0x7FFF0000)
   mv a0, s5        # root_pa
   li a1, USER_STACK_VA
-  mv a2, t6        # pa
+  mv a2, s8        # pa
   li a3, PTE_USER_DATA # 0xD7 (V | R | W | U | A | D)
   call vmm_map_page
 
@@ -223,16 +218,18 @@ elf_load_oom:
   li a0, -2
 
 elf_load_done:
-  lw s7, 0(sp)
-  lw s6, 4(sp)
-  lw s5, 8(sp)
-  lw s4, 12(sp)
-  lw s3, 16(sp)
-  lw s2, 20(sp)
-  lw s1, 24(sp)
-  lw s0, 28(sp)
-  lw ra, 32(sp)
-  addi sp, sp, 36
+  lw s9, 4(sp)
+  lw s8, 8(sp)
+  lw s7, 12(sp)
+  lw s6, 16(sp)
+  lw s5, 20(sp)
+  lw s4, 24(sp)
+  lw s3, 28(sp)
+  lw s2, 32(sp)
+  lw s1, 36(sp)
+  lw s0, 40(sp)
+  lw ra, 44(sp)
+  addi sp, sp, 48
   ret
 
 # sys_exec(a0=path_ptr, a1=argv_ptr): Replaces current process with new ELF binary.

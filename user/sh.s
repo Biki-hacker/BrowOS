@@ -160,6 +160,18 @@ sh_cd_do:
   lbu t2, 1(a0)
   beqz t2, sh_cd_root
 sh_cd_check_dot:
+  # Check if ".." or "."
+  lbu t0, 0(a0)
+  li t1, '.'
+  bne t0, t1, sh_cd_lookup
+  lbu t2, 1(a0)
+  beqz t2, sh_loop  # "cd ." is a no-op
+  li t1, '.'
+  bne t2, t1, sh_cd_lookup
+  lbu t3, 2(a0)
+  beqz t3, sh_cd_root  # "cd .." goes up to root "/"
+
+sh_cd_lookup:
   mv s1, a0            # s1 = dir path
   la a1, stat_scratch
   call stat

@@ -117,28 +117,28 @@ sys_handle_write:
 
 sys_write_uart:
   # Write a2 bytes from a1 to UART
-  addi sp, sp, -12
-  sw ra, 8(sp)
-  sw s0, 4(sp)
-  sw s1, 0(sp)
+  addi sp, sp, -16
+  sw ra, 12(sp)
+  sw s0, 8(sp)
+  sw s1, 4(sp)
+  sw s2, 0(sp)
   mv s0, a1       # buf
   mv s1, a2       # count
-  li t0, 0
+  li s2, 0        # index
 sys_write_uart_loop:
-  bge t0, s1, sys_write_uart_done
-  add t1, s0, t0
+  bge s2, s1, sys_write_uart_done
+  add t1, s0, s2
   lbu a0, 0(t1)
-  sw t0, 0(sp)
   call uart_putc
-  lw t0, 0(sp)
-  addi t0, t0, 1
+  addi s2, s2, 1
   j sys_write_uart_loop
 sys_write_uart_done:
   mv a0, s1
-  lw s1, 0(sp)
-  lw s0, 4(sp)
-  lw ra, 8(sp)
-  addi sp, sp, 12
+  lw s2, 0(sp)
+  lw s1, 4(sp)
+  lw s0, 8(sp)
+  lw ra, 12(sp)
+  addi sp, sp, 16
   ret
 
 sys_write_pipe:

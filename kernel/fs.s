@@ -757,77 +757,95 @@ fs_mkdir:
 # Reads up to count bytes from file at offset into dst_ptr.
 # Returns a0 = bytes read.
 fs_read:
-  addi sp, sp, -28
-  sw ra, 24(sp)
-  sw s0, 20(sp)
-  sw s1, 16(sp)
-  sw s2, 12(sp)
-  sw s3, 8(sp)
-  sw s4, 4(sp)
+  addi sp, sp, -32
+  sw ra, 28(sp)
+  sw s0, 24(sp)
+  sw s1, 20(sp)
+  sw s2, 16(sp)
+  sw s3, 12(sp)
+  sw s4, 8(sp)
+  sw s5, 4(sp)
+  mv s0, a0            # inode_no
   mv s1, a1            # offset
   mv s2, a2            # dst
   mv s3, a3            # count
+  li s5, 0             # total bytes read
 
+  # Read inode to get size
+  mv a0, s0
   call fs_read_inode
   la t0, fs_inode_buf
   lw s4, 4(t0)         # file size
 
-  # Clamp: if offset >= size, read 0
-  bge s1, s4, fs_read_zero
-  # Clamp count to remaining bytes
+  # Clamp: if offset >= size, return 0
+  bge s1, s4, fs_read_done
+  # Clamp count to remaining file size
   sub t1, s4, s1
-  blt s3, t1, fs_read_count_ok
+  blt s3, t1, fs_read_loop
   mv s3, t1
-fs_read_count_ok:
-  beqz s3, fs_read_zero
 
-  # block_idx = offset / 4096, block_off = offset % 4096
+fs_read_loop:
+  beqz s3, fs_read_done
+
+  # block_idx = s1 / 4096, block_off = s1 % 4096
   srli t0, s1, 12      # block index
-  slli s0, s1, 20
-  srli s0, s0, 20      # offset within block (s1 & 0xFFF)
+  slli t1, s1, 20
+  srli t1, t1, 20      # offset within block (s1 & 0xFFF)
 
-  # Get block number from direct[block_idx]
-  la t1, fs_inode_buf
-  slli t2, t0, 2
-  addi t2, t2, 12      # offset of direct[block_idx]
-  add t1, t1, t2
-  lw t3, 0(t1)         # block_no
-  beqz t3, fs_read_zero
+  # Check direct[block_idx]
+  la t2, fs_inode_buf
+  slli t3, t0, 2
+  addi t3, t3, 12      # offset of direct[block_idx]
+  add t2, t2, t3
+  lw t4, 0(t2)         # block_no
+  beqz t4, fs_read_done
 
   # Read the data block
-  sw s3, 0(sp)
-  mv a0, t3
+  sw t1, 0(sp)         # save block_off
+  mv a0, t4
   call fs_read_block
-  lw s3, 0(sp)
+  lw t1, 0(sp)         # restore block_off
 
-  # Copy from fs_block_buf + s0 to s2, s3 bytes
+  # Calculate chunk size = min(s3, 4096 - block_off)
+  li t5, 4096
+  sub t5, t5, t1       # t5 = 4096 - block_off
+  blt s3, t5, fs_read_use_s3
+  mv t2, t5            # t2 = chunk bytes
+  j fs_read_copy_start
+fs_read_use_s3:
+  mv t2, s3            # t2 = chunk bytes
+
+fs_read_copy_start:
+  # Copy t2 bytes from fs_block_buf + t1 to s2
   la t0, fs_block_buf
-  add t0, t0, s0
-  li t1, 0
-fs_read_copy:
-  bge t1, s3, fs_read_done_copy
-  lbu t2, 0(t0)
-  sb t2, 0(s2)
+  add t0, t0, t1       # src = fs_block_buf + block_off
+  li t3, 0             # loop index
+fs_read_copy_loop:
+  bge t3, t2, fs_read_copy_end
+  lbu t4, 0(t0)
+  sb t4, 0(s2)
   addi t0, t0, 1
   addi s2, s2, 1
-  addi t1, t1, 1
-  j fs_read_copy
+  addi t3, t3, 1
+  j fs_read_copy_loop
 
-fs_read_done_copy:
-  mv a0, s3
-  j fs_read_ret
+fs_read_copy_end:
+  # Update offsets and counts
+  add s1, s1, t2       # offset += chunk
+  sub s3, s3, t2       # rem -= chunk
+  add s5, s5, t2       # total_read += chunk
+  j fs_read_loop
 
-fs_read_zero:
-  li a0, 0
-
-fs_read_ret:
-  lw s4, 4(sp)
-  lw s3, 8(sp)
-  lw s2, 12(sp)
-  lw s1, 16(sp)
-  lw s0, 20(sp)
-  lw ra, 24(sp)
-  addi sp, sp, 28
+fs_read_done:
+  mv a0, s5
+  lw s5, 4(sp)
+  lw s4, 8(sp)
+  lw s3, 12(sp)
+  lw s2, 16(sp)
+  lw s1, 20(sp)
+  lw s0, 24(sp)
+  lw ra, 28(sp)
+  addi sp, sp, 32
   ret
 
 # ─── fs_write(a0=inode_no, a1=offset, a2=src_ptr, a3=count) ─────────
