@@ -4,20 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BrowOS — Self-Contained RISC-V Web Operating System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
   <style>
 :root {
-  --bg-primary: #0a0c10;
-  --bg-secondary: #12161f;
-  --bg-tertiary: #1a202c;
+  --bg-primary: #080a0f;
+  --bg-secondary: #0f131c;
+  --bg-tertiary: #161c28;
+  --bg-card: rgba(22, 28, 40, 0.7);
   --accent-primary: #00ff88;
   --accent-secondary: #00d2ff;
   --accent-magenta: #ff007f;
-  --text-primary: #e6edf3;
+  --accent-amber: #ffb86c;
+  --text-primary: #f0f6fc;
   --text-secondary: #8b949e;
-  --border-color: rgba(0, 255, 136, 0.2);
+  --text-muted: #484f58;
+  --border-color: rgba(0, 255, 136, 0.18);
   --border-active: rgba(0, 255, 136, 0.6);
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-  --shadow-glow: 0 0 20px rgba(0, 255, 136, 0.15);
+  --border-cyan: rgba(0, 210, 255, 0.3);
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-display: 'Orbitron', 'JetBrains Mono', monospace;
+  --shadow-glow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 255, 136, 0.08);
+  --shadow-glow-cyan: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 210, 255, 0.1);
 }
 
 * {
@@ -35,10 +44,11 @@ body {
   flex-direction: column;
   overflow-x: hidden;
   background-image: 
-    radial-gradient(circle at 50% 0%, rgba(0, 210, 255, 0.05) 0%, transparent 75%),
-    linear-gradient(rgba(18, 22, 31, 0.6) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(18, 22, 31, 0.6) 1px, transparent 1px);
-  background-size: 100% 100%, 30px 30px, 30px 30px;
+    radial-gradient(circle at 50% 0%, rgba(0, 210, 255, 0.08) 0%, transparent 60%),
+    radial-gradient(circle at 85% 85%, rgba(0, 255, 136, 0.04) 0%, transparent 40%),
+    linear-gradient(rgba(22, 28, 40, 0.45) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(22, 28, 40, 0.45) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 28px 28px, 28px 28px;
 }
 
 /* Header */
@@ -46,89 +56,121 @@ header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 24px;
-  background: rgba(18, 22, 31, 0.85);
-  backdrop-filter: blur(12px);
+  padding: 12px 28px;
+  background: rgba(15, 19, 28, 0.9);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border-color);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
 .logo-container {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .logo-text {
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: 2px;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 3px;
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+  text-shadow: 0 0 16px rgba(0, 255, 136, 0.35);
 }
 
 .badge {
-  font-size: 0.7rem;
-  background: rgba(0, 255, 136, 0.15);
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(0, 255, 136, 0.12);
   color: var(--accent-primary);
   border: 1px solid var(--border-color);
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: 4px;
   text-transform: uppercase;
+  letter-spacing: 0.8px;
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.1);
+}
+
+.badge-focus {
+  background: rgba(0, 210, 255, 0.15);
+  color: var(--accent-secondary);
+  border-color: var(--border-cyan);
 }
 
 .header-stats {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 22px;
 }
 
 .stat-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   font-size: 0.85rem;
   color: var(--text-secondary);
 }
 
 .stat-val {
   color: var(--accent-primary);
-  font-weight: 600;
+  font-weight: 700;
+  font-feature-settings: 'tnum' 1;
 }
 
+.stat-priv-m { color: var(--accent-primary); }
+.stat-priv-s { color: var(--accent-secondary); }
+.stat-priv-u { color: var(--accent-amber); }
+
 .led {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: #333;
+  background: #252d3a;
+  transition: all 0.3s ease;
 }
 
 .led-green {
   background: #00ff88;
-  box-shadow: 0 0 8px #00ff88;
+  box-shadow: 0 0 10px #00ff88, 0 0 20px rgba(0, 255, 136, 0.5);
+  animation: ledPulseGreen 2.5s infinite ease-in-out;
 }
 
 .led-blue {
   background: #00d2ff;
-  box-shadow: 0 0 8px #00d2ff;
+  box-shadow: 0 0 10px #00d2ff, 0 0 20px rgba(0, 210, 255, 0.6);
+  animation: ledPulseBlue 1.8s infinite ease-in-out;
+}
+
+@keyframes ledPulseGreen {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 6px #00ff88); }
+  50% { opacity: 0.75; filter: drop-shadow(0 0 2px #00ff88); }
+}
+
+@keyframes ledPulseBlue {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 6px #00d2ff); }
+  50% { opacity: 0.7; filter: drop-shadow(0 0 2px #00d2ff); }
 }
 
 /* Main Workspace */
 main {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 400px;
-  gap: 20px;
-  padding: 20px;
-  max-width: 1600px;
+  grid-template-columns: 1fr 420px;
+  gap: 24px;
+  padding: 24px;
+  max-width: 1680px;
   margin: 0 auto;
   width: 100%;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1240px) {
   main {
     grid-template-columns: 1fr;
   }
@@ -136,22 +178,39 @@ main {
 
 /* Glass Panels */
 .panel {
-  background: rgba(18, 22, 31, 0.75);
-  backdrop-filter: blur(16px);
+  background: rgba(15, 19, 28, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 10px;
   overflow: hidden;
   box-shadow: var(--shadow-glow);
   display: flex;
   flex-direction: column;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.panel:hover {
+  border-color: rgba(0, 255, 136, 0.35);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(0, 255, 136, 0.12);
+}
+
+.gpu-panel {
+  border-color: var(--border-cyan);
+  box-shadow: var(--shadow-glow-cyan);
+}
+
+.gpu-panel:hover {
+  border-color: rgba(0, 210, 255, 0.55);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(0, 210, 255, 0.18);
 }
 
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
-  background: rgba(26, 32, 44, 0.6);
+  padding: 12px 18px;
+  background: rgba(22, 28, 40, 0.75);
   border-bottom: 1px solid var(--border-color);
   font-size: 0.85rem;
   font-weight: 600;
@@ -160,156 +219,211 @@ main {
   color: var(--text-primary);
 }
 
+.panel-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel-icon {
+  color: var(--accent-primary);
+  font-size: 0.95rem;
+}
+
+.gpu-panel .panel-icon {
+  color: var(--accent-secondary);
+}
+
 .panel-controls {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
 .btn-ctrl {
-  background: rgba(0, 255, 136, 0.1);
+  background: rgba(0, 255, 136, 0.08);
   border: 1px solid var(--border-color);
   color: var(--accent-primary);
-  padding: 4px 10px;
-  border-radius: 4px;
+  padding: 5px 12px;
+  border-radius: 5px;
   font-family: inherit;
   font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn-ctrl:hover {
-  background: rgba(0, 255, 136, 0.25);
+  background: rgba(0, 255, 136, 0.22);
   border-color: var(--accent-primary);
-  box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+  box-shadow: 0 0 12px rgba(0, 255, 136, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-ctrl:active {
+  transform: translateY(0);
 }
 
 /* Terminal Viewport */
 .terminal-container {
   flex: 1;
-  padding: 16px;
+  padding: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #0a0e14;
+  background: #07090e;
+  cursor: text;
+  position: relative;
+}
+
+.terminal-screen-wrapper {
+  width: 100%;
+  max-width: 740px;
+  position: relative;
 }
 
 #term-canvas {
   width: 100%;
-  max-width: 720px;
+  max-width: 740px;
   height: auto;
-  border-radius: 4px;
-  box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.8);
+  border-radius: 6px;
+  background-color: #0a0e14;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.9), 0 0 10px rgba(0, 0, 0, 0.5);
   outline: none;
+  border: 1px solid rgba(0, 255, 136, 0.12);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  display: block;
+}
+
+#term-canvas:focus {
+  border-color: var(--accent-primary);
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.9), 0 0 16px rgba(0, 255, 136, 0.3);
 }
 
 /* Sidebar */
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 22px;
 }
 
 /* GPU Viewport */
 .gpu-container {
-  padding: 12px;
+  padding: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #000;
+  background: #040508;
 }
 
 #gpu-canvas {
   width: 100%;
   height: auto;
-  border-radius: 4px;
+  border-radius: 6px;
   image-rendering: pixelated;
-  box-shadow: 0 0 15px rgba(0, 210, 255, 0.2);
+  border: 1px solid rgba(0, 210, 255, 0.25);
+  box-shadow: 0 0 20px rgba(0, 210, 255, 0.2);
 }
 
 /* Telemetry Grid */
 .telemetry-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  padding: 14px;
+  gap: 12px;
+  padding: 16px;
 }
 
 .telemetry-card {
-  background: rgba(26, 32, 44, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 8px 12px;
-  border-radius: 6px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 10px 14px;
+  border-radius: 7px;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.telemetry-card:hover {
+  background: rgba(22, 28, 40, 0.9);
+  border-color: rgba(0, 210, 255, 0.25);
 }
 
 .telemetry-label {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--text-secondary);
   text-transform: uppercase;
-  margin-bottom: 2px;
+  letter-spacing: 0.8px;
+  margin-bottom: 4px;
 }
 
 .telemetry-value {
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 1.05rem;
+  font-weight: 700;
   color: var(--accent-secondary);
-}
-
-/* Process List Table */
-.proc-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8rem;
-  padding: 10px;
-}
-
-.proc-table th {
-  text-align: left;
-  padding: 8px 12px;
-  color: var(--text-secondary);
-  border-bottom: 1px solid var(--border-color);
-  font-weight: 500;
-}
-
-.proc-table td {
-  padding: 8px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  font-feature-settings: 'tnum' 1;
 }
 
 /* Action Button Grid */
 .action-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  padding: 14px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+  padding: 16px;
+}
+
+@media (max-width: 480px) {
+  .action-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .btn-action {
-  background: rgba(0, 210, 255, 0.1);
-  border: 1px solid rgba(0, 210, 255, 0.3);
+  background: rgba(0, 210, 255, 0.08);
+  border: 1px solid rgba(0, 210, 255, 0.25);
   color: var(--accent-secondary);
-  padding: 8px 12px;
-  border-radius: 4px;
+  padding: 9px 10px;
+  border-radius: 6px;
   font-family: inherit;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 600;
   cursor: pointer;
-  text-align: center;
-  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn-action:hover {
-  background: rgba(0, 210, 255, 0.25);
-  box-shadow: 0 0 10px rgba(0, 210, 255, 0.3);
+  background: rgba(0, 210, 255, 0.22);
+  border-color: var(--accent-secondary);
+  box-shadow: 0 0 14px rgba(0, 210, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-action:active {
+  transform: translateY(0);
+}
+
+.btn-icon {
+  font-size: 0.9rem;
 }
 
 /* Footer */
 footer {
-  padding: 12px 24px;
+  padding: 14px 28px;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
   display: flex;
+  align-items: center;
   justify-content: space-between;
   font-size: 0.75rem;
   color: var(--text-secondary);
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.footer-brand {
+  color: var(--accent-primary);
+  font-weight: 600;
 }
 
   </style>
@@ -331,7 +445,7 @@ footer {
       </div>
       <div class="stat-item">
         <span>Mode:</span>
-        <span class="stat-val" id="stat-priv">M-Mode</span>
+        <span class="stat-val stat-priv-m" id="stat-priv">M-Mode</span>
       </div>
       <div class="stat-item">
         <span>MIPS:</span>
@@ -342,26 +456,35 @@ footer {
 
   <main>
     <!-- Terminal Panel -->
-    <div class="panel">
+    <div class="panel terminal-panel">
       <div class="panel-header">
-        <span>Interactive ANSI Terminal (UART0)</span>
+        <div class="panel-title-wrap">
+          <span class="panel-icon">⬢</span>
+          <span>Interactive ANSI Terminal (UART0)</span>
+          <span class="badge badge-focus" id="badge-focus">Ready</span>
+        </div>
         <div class="panel-controls">
-          <button class="btn-ctrl" id="btn-reset">Reboot</button>
-          <button class="btn-ctrl" id="btn-pause">Pause</button>
+          <button class="btn-ctrl" id="btn-reset" title="Reboot Virtual Machine">Reboot</button>
+          <button class="btn-ctrl" id="btn-pause" title="Pause / Resume Execution">Pause</button>
         </div>
       </div>
-      <div class="terminal-container">
-        <canvas id="term-canvas" tabindex="0"></canvas>
+      <div class="terminal-container" id="term-container" title="Click to focus console">
+        <div class="terminal-screen-wrapper">
+          <canvas id="term-canvas" tabindex="0"></canvas>
+        </div>
       </div>
     </div>
 
     <!-- Sidebar: GPU & Hardware Telemetry -->
     <div class="sidebar">
       <!-- BrowGPU Hardware Display -->
-      <div class="panel">
+      <div class="panel gpu-panel">
         <div class="panel-header">
-          <span>BrowGPU Framebuffer</span>
-          <span class="badge">320x240</span>
+          <div class="panel-title-wrap">
+            <span class="panel-icon">✦</span>
+            <span>BrowGPU Framebuffer</span>
+          </div>
+          <span class="badge">320x240 RGB32</span>
         </div>
         <div class="gpu-container">
           <canvas id="gpu-canvas" width="320" height="240"></canvas>
@@ -371,20 +494,28 @@ footer {
       <!-- Quick Command Buttons -->
       <div class="panel">
         <div class="panel-header">
-          <span>Quick Actions</span>
+          <div class="panel-title-wrap">
+            <span class="panel-icon">⚡</span>
+            <span>Quick Console Actions</span>
+          </div>
         </div>
         <div class="action-grid">
-          <button class="btn-action" id="btn-globe">Render Globe</button>
-          <button class="btn-action" id="btn-ps">Process List</button>
-          <button class="btn-action" id="btn-uname">System Info</button>
-          <button class="btn-action" id="btn-help">Help</button>
+          <button class="btn-action" id="btn-globe"><span class="btn-icon">🌐</span> Globe</button>
+          <button class="btn-action" id="btn-ps"><span class="btn-icon">📊</span> Processes</button>
+          <button class="btn-action" id="btn-ls"><span class="btn-icon">📁</span> Files (ls)</button>
+          <button class="btn-action" id="btn-uname"><span class="btn-icon">ℹ</span> System</button>
+          <button class="btn-action" id="btn-clear"><span class="btn-icon">⌫</span> Clear</button>
+          <button class="btn-action" id="btn-help"><span class="btn-icon">❓</span> Help</button>
         </div>
       </div>
 
       <!-- System Telemetry -->
       <div class="panel">
         <div class="panel-header">
-          <span>Hardware Telemetry</span>
+          <div class="panel-title-wrap">
+            <span class="panel-icon">📡</span>
+            <span>Hardware Telemetry</span>
+          </div>
         </div>
         <div class="telemetry-grid">
           <div class="telemetry-card">
@@ -409,8 +540,12 @@ footer {
   </main>
 
   <footer>
-    <span>BrowOS 0.1.0 — 100% Client-Side Pure WebAssembly/JavaScript OS Simulation</span>
-    <span>Zero Backend Required &bull; RISC-V RV32IM &bull; Sv32 MMU &bull; BrowGPU</span>
+    <div class="footer-left">
+      <span class="footer-brand">BrowOS 0.1.0</span> &bull; <span>100% Client-Side Pure WebAssembly / JS RISC-V Computer</span>
+    </div>
+    <div class="footer-right">
+      <span>RV32IM</span> &bull; <span>Sv32 MMU</span> &bull; <span>BrowGPU</span> &bull; <span>BrFS</span>
+    </div>
   </footer>
 
   <script>
@@ -2596,11 +2731,34 @@ class BrowOsApp {
 
   _initDom() {
     const termCanvas = document.getElementById('term-canvas');
+    const termContainer = document.getElementById('term-container');
+    const badgeFocus = document.getElementById('badge-focus');
+
     if (termCanvas) {
       this.terminal = new AnsiTerminal(termCanvas, {
         onKey: (byte) => {
           if (this.uart) this.uart.pushRx(byte);
         },
+      });
+
+      termCanvas.addEventListener('focus', () => {
+        if (badgeFocus) {
+          badgeFocus.innerText = 'Active';
+          badgeFocus.classList.add('badge-focus');
+        }
+      });
+
+      termCanvas.addEventListener('blur', () => {
+        if (badgeFocus) {
+          badgeFocus.innerText = 'Ready';
+          badgeFocus.classList.remove('badge-focus');
+        }
+      });
+    }
+
+    if (termContainer && termCanvas) {
+      termContainer.addEventListener('click', () => {
+        termCanvas.focus();
       });
     }
 
@@ -2624,8 +2782,8 @@ class BrowOsApp {
     const btnGlobe = document.getElementById('btn-globe');
     if (btnGlobe) {
       btnGlobe.addEventListener('click', () => {
-        // Send "globe\n" into UART
         this.sendInput('globe\n');
+        if (termCanvas) termCanvas.focus();
       });
     }
 
@@ -2633,6 +2791,7 @@ class BrowOsApp {
     if (btnHelp) {
       btnHelp.addEventListener('click', () => {
         this.sendInput('help\n');
+        if (termCanvas) termCanvas.focus();
       });
     }
 
@@ -2640,6 +2799,23 @@ class BrowOsApp {
     if (btnPs) {
       btnPs.addEventListener('click', () => {
         this.sendInput('ps\n');
+        if (termCanvas) termCanvas.focus();
+      });
+    }
+
+    const btnLs = document.getElementById('btn-ls');
+    if (btnLs) {
+      btnLs.addEventListener('click', () => {
+        this.sendInput('ls\n');
+        if (termCanvas) termCanvas.focus();
+      });
+    }
+
+    const btnClear = document.getElementById('btn-clear');
+    if (btnClear) {
+      btnClear.addEventListener('click', () => {
+        this.sendInput('clear\n');
+        if (termCanvas) termCanvas.focus();
       });
     }
 
@@ -2647,6 +2823,7 @@ class BrowOsApp {
     if (btnUname) {
       btnUname.addEventListener('click', () => {
         this.sendInput('uname\n');
+        if (termCanvas) termCanvas.focus();
       });
     }
   }
@@ -2806,8 +2983,10 @@ class BrowOsApp {
 
       const elPriv = document.getElementById('stat-priv');
       if (elPriv) {
-        const mode = this.cpu.priv === 3 ? 'M-Mode' : this.cpu.priv === 1 ? 'S-Mode' : 'U-Mode';
-        elPriv.innerText = mode;
+        const isM = this.cpu.priv === 3;
+        const isS = this.cpu.priv === 1;
+        elPriv.innerText = isM ? 'M-Mode' : isS ? 'S-Mode' : 'U-Mode';
+        elPriv.className = 'stat-val ' + (isM ? 'stat-priv-m' : isS ? 'stat-priv-s' : 'stat-priv-u');
       }
     }
   }

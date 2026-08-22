@@ -107,6 +107,9 @@ function bundle() {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BrowOS — Self-Contained RISC-V Web Operating System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
   <style>
 ${css}
   </style>
@@ -128,7 +131,7 @@ ${css}
       </div>
       <div class="stat-item">
         <span>Mode:</span>
-        <span class="stat-val" id="stat-priv">M-Mode</span>
+        <span class="stat-val stat-priv-m" id="stat-priv">M-Mode</span>
       </div>
       <div class="stat-item">
         <span>MIPS:</span>
@@ -139,26 +142,35 @@ ${css}
 
   <main>
     <!-- Terminal Panel -->
-    <div class="panel">
+    <div class="panel terminal-panel">
       <div class="panel-header">
-        <span>Interactive ANSI Terminal (UART0)</span>
+        <div class="panel-title-wrap">
+          <span class="panel-icon">⬢</span>
+          <span>Interactive ANSI Terminal (UART0)</span>
+          <span class="badge badge-focus" id="badge-focus">Ready</span>
+        </div>
         <div class="panel-controls">
-          <button class="btn-ctrl" id="btn-reset">Reboot</button>
-          <button class="btn-ctrl" id="btn-pause">Pause</button>
+          <button class="btn-ctrl" id="btn-reset" title="Reboot Virtual Machine">Reboot</button>
+          <button class="btn-ctrl" id="btn-pause" title="Pause / Resume Execution">Pause</button>
         </div>
       </div>
-      <div class="terminal-container">
-        <canvas id="term-canvas" tabindex="0"></canvas>
+      <div class="terminal-container" id="term-container" title="Click to focus console">
+        <div class="terminal-screen-wrapper">
+          <canvas id="term-canvas" tabindex="0"></canvas>
+        </div>
       </div>
     </div>
 
     <!-- Sidebar: GPU & Hardware Telemetry -->
     <div class="sidebar">
       <!-- BrowGPU Hardware Display -->
-      <div class="panel">
+      <div class="panel gpu-panel">
         <div class="panel-header">
-          <span>BrowGPU Framebuffer</span>
-          <span class="badge">320x240</span>
+          <div class="panel-title-wrap">
+            <span class="panel-icon">✦</span>
+            <span>BrowGPU Framebuffer</span>
+          </div>
+          <span class="badge">320x240 RGB32</span>
         </div>
         <div class="gpu-container">
           <canvas id="gpu-canvas" width="320" height="240"></canvas>
@@ -168,20 +180,28 @@ ${css}
       <!-- Quick Command Buttons -->
       <div class="panel">
         <div class="panel-header">
-          <span>Quick Actions</span>
+          <div class="panel-title-wrap">
+            <span class="panel-icon">⚡</span>
+            <span>Quick Console Actions</span>
+          </div>
         </div>
         <div class="action-grid">
-          <button class="btn-action" id="btn-globe">Render Globe</button>
-          <button class="btn-action" id="btn-ps">Process List</button>
-          <button class="btn-action" id="btn-uname">System Info</button>
-          <button class="btn-action" id="btn-help">Help</button>
+          <button class="btn-action" id="btn-globe"><span class="btn-icon">🌐</span> Globe</button>
+          <button class="btn-action" id="btn-ps"><span class="btn-icon">📊</span> Processes</button>
+          <button class="btn-action" id="btn-ls"><span class="btn-icon">📁</span> Files (ls)</button>
+          <button class="btn-action" id="btn-uname"><span class="btn-icon">ℹ</span> System</button>
+          <button class="btn-action" id="btn-clear"><span class="btn-icon">⌫</span> Clear</button>
+          <button class="btn-action" id="btn-help"><span class="btn-icon">❓</span> Help</button>
         </div>
       </div>
 
       <!-- System Telemetry -->
       <div class="panel">
         <div class="panel-header">
-          <span>Hardware Telemetry</span>
+          <div class="panel-title-wrap">
+            <span class="panel-icon">📡</span>
+            <span>Hardware Telemetry</span>
+          </div>
         </div>
         <div class="telemetry-grid">
           <div class="telemetry-card">
@@ -206,8 +226,12 @@ ${css}
   </main>
 
   <footer>
-    <span>BrowOS 0.1.0 — 100% Client-Side Pure WebAssembly/JavaScript OS Simulation</span>
-    <span>Zero Backend Required &bull; RISC-V RV32IM &bull; Sv32 MMU &bull; BrowGPU</span>
+    <div class="footer-left">
+      <span class="footer-brand">BrowOS 0.1.0</span> &bull; <span>100% Client-Side Pure WebAssembly / JS RISC-V Computer</span>
+    </div>
+    <div class="footer-right">
+      <span>RV32IM</span> &bull; <span>Sv32 MMU</span> &bull; <span>BrowGPU</span> &bull; <span>BrFS</span>
+    </div>
   </footer>
 
   <script>

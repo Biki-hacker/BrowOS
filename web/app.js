@@ -28,11 +28,34 @@ class BrowOsApp {
 
   _initDom() {
     const termCanvas = document.getElementById('term-canvas');
+    const termContainer = document.getElementById('term-container');
+    const badgeFocus = document.getElementById('badge-focus');
+
     if (termCanvas) {
       this.terminal = new AnsiTerminal(termCanvas, {
         onKey: (byte) => {
           if (this.uart) this.uart.pushRx(byte);
         },
+      });
+
+      termCanvas.addEventListener('focus', () => {
+        if (badgeFocus) {
+          badgeFocus.innerText = 'Active';
+          badgeFocus.classList.add('badge-focus');
+        }
+      });
+
+      termCanvas.addEventListener('blur', () => {
+        if (badgeFocus) {
+          badgeFocus.innerText = 'Ready';
+          badgeFocus.classList.remove('badge-focus');
+        }
+      });
+    }
+
+    if (termContainer && termCanvas) {
+      termContainer.addEventListener('click', () => {
+        termCanvas.focus();
       });
     }
 
@@ -56,8 +79,8 @@ class BrowOsApp {
     const btnGlobe = document.getElementById('btn-globe');
     if (btnGlobe) {
       btnGlobe.addEventListener('click', () => {
-        // Send "globe\n" into UART
         this.sendInput('globe\n');
+        if (termCanvas) termCanvas.focus();
       });
     }
 
@@ -65,6 +88,7 @@ class BrowOsApp {
     if (btnHelp) {
       btnHelp.addEventListener('click', () => {
         this.sendInput('help\n');
+        if (termCanvas) termCanvas.focus();
       });
     }
 
@@ -72,6 +96,23 @@ class BrowOsApp {
     if (btnPs) {
       btnPs.addEventListener('click', () => {
         this.sendInput('ps\n');
+        if (termCanvas) termCanvas.focus();
+      });
+    }
+
+    const btnLs = document.getElementById('btn-ls');
+    if (btnLs) {
+      btnLs.addEventListener('click', () => {
+        this.sendInput('ls\n');
+        if (termCanvas) termCanvas.focus();
+      });
+    }
+
+    const btnClear = document.getElementById('btn-clear');
+    if (btnClear) {
+      btnClear.addEventListener('click', () => {
+        this.sendInput('clear\n');
+        if (termCanvas) termCanvas.focus();
       });
     }
 
@@ -79,6 +120,7 @@ class BrowOsApp {
     if (btnUname) {
       btnUname.addEventListener('click', () => {
         this.sendInput('uname\n');
+        if (termCanvas) termCanvas.focus();
       });
     }
   }
@@ -238,8 +280,10 @@ class BrowOsApp {
 
       const elPriv = document.getElementById('stat-priv');
       if (elPriv) {
-        const mode = this.cpu.priv === 3 ? 'M-Mode' : this.cpu.priv === 1 ? 'S-Mode' : 'U-Mode';
-        elPriv.innerText = mode;
+        const isM = this.cpu.priv === 3;
+        const isS = this.cpu.priv === 1;
+        elPriv.innerText = isM ? 'M-Mode' : isS ? 'S-Mode' : 'U-Mode';
+        elPriv.className = 'stat-val ' + (isM ? 'stat-priv-m' : isS ? 'stat-priv-s' : 'stat-priv-u');
       }
     }
   }
