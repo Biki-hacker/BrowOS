@@ -256,6 +256,16 @@ ${appJs}
 
   const outPath = path.join(ROOT_DIR, 'index.html');
   fs.writeFileSync(outPath, html, 'utf8');
+
+  // Mirror to public/ and dist/ directories for universal hosting compatibility
+  const publicDir = path.join(ROOT_DIR, 'public');
+  if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+  fs.writeFileSync(path.join(publicDir, 'index.html'), html, 'utf8');
+
+  const distDir = path.join(ROOT_DIR, 'dist');
+  if (!fs.existsSync(distDir)) fs.mkdirSync(distDir, { recursive: true });
+  fs.writeFileSync(path.join(distDir, 'index.html'), html, 'utf8');
+
   console.log(`[BrowOS] Successfully bundled standalone index.html (${html.length} bytes)!`);
   return { htmlPath: outPath, size: html.length };
 }
