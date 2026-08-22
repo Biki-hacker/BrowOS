@@ -106,7 +106,7 @@ function bundle() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BrowOS — Self-Contained RISC-V Web Operating System</title>
+  <title>BrowOS - Self-Contained RISC-V Web Operating System</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%2300ff88'/%3E%3Cstop offset='100%25' stop-color='%2300d2ff'/%3E%3C/linearGradient%3E%3Cfilter id='glow'%3E%3CfeDropShadow dx='0' dy='0' stdDeviation='1.5' flood-color='%2300ff88' flood-opacity='0.6'/%3E%3C/filter%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='%23080a0f' stroke='url(%23g)' stroke-width='2.5'/%3E%3Cpath d='M20 18 h14 c6 0 11 3.5 11 8.5 0 3.2 -2.2 6 -5.8 7.3 4.6 1.4 7.8 4.6 7.8 8.7 0 5.5 -5 9.5 -12.5 9.5 H20 Z' fill='none' stroke='url(%23g)' stroke-width='4.5' stroke-linejoin='round' stroke-linecap='round' filter='url(%23glow)'/%3E%3Cpath d='M20 34 h13' stroke='url(%23g)' stroke-width='4.5' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='32' r='2' fill='%2300ff88'/%3E%3Ccircle cx='52' cy='32' r='2' fill='%2300d2ff'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
