@@ -169,13 +169,8 @@ sh_cd_sp:
   addi a0, a0, 1
   j sh_cd_sp
 sh_cd_do:
-  # Bare "cd" (or trailing spaces) changes to the root directory
+  # Bare "cd" changes to the root directory
   beqz t0, sh_cd_root
-  li t1, ' '
-  bne t0, t1, sh_cd_call
-  addi a0, a0, 1
-  j sh_cd_do
-sh_cd_call:
   call chdir
   bnez a0, sh_cd_err
   j sh_loop
@@ -295,6 +290,7 @@ sh_cat_open:
   la a1, cat_buf
   li a2, 4095
   call read
+  bltz a0, sh_cat_read_err
   la t0, cat_buf
   add t0, t0, a0
   sb x0, 0(t0)     # null-terminate
@@ -303,6 +299,12 @@ sh_cat_open:
   # Close fd
   mv a0, s1
   call close
+  j sh_loop
+sh_cat_read_err:
+  mv a0, s1
+  call close
+  la a0, str_cat_notfound
+  call puts
   j sh_loop
 sh_cat_usage:
   la a0, str_cat_usage

@@ -432,7 +432,10 @@ class Cpu {
     if (addr === 0x104) return this.csrs[0x304] & S_IRQ_MASK;          // sie
     if (addr === 0x144) return this.mipPending() & S_IRQ_MASK;         // sip
     if (addr === 0x344) return this.mipPending();                      // mip
-    if (addr === 0xB00 || addr === 0xB80 || addr === 0xC00 || addr === 0xC80) return this.cycle;      // cycle aliases
+    if (addr === 0xB00 || addr === 0xC00) return this.cycle | 0;        // cycle / mcycle (low)
+    if (addr === 0xB80 || addr === 0xC80) return Math.floor(this.cycle / 0x100000000) | 0; // cycleh / mcycleh (high)
+    if (addr === 0xC01) return this.timer ? (this.timer.mtimeLo | 0) : 0; // time (low)
+    if (addr === 0xC81) return this.timer ? (this.timer.mtimeHi | 0) : 0; // timeh (high)
     if (addr === 0xB02 || addr === 0xC02) return this.instret | 0;              // instret (low)
     if (addr === 0xB82 || addr === 0xC82) return Math.floor(this.instret / 0x100000000) | 0;  // instreth (high)
     const v = this.csrs[addr];
@@ -475,7 +478,14 @@ class Cpu {
       this.csrs[0x344] = v & ~DEVICE_IRQ_MASK;
       return;
     }
-    if (addr === 0xB00 || addr === 0xB80 || addr === 0xC00 || addr === 0xC80) { this.cycle = v | 0; return; }
+    if (addr === 0xB00 || addr === 0xC00) {                             // cycle / mcycle low
+      this.cycle = Math.floor(this.cycle / 0x100000000) * 0x100000000 + (v >>> 0);
+      return;
+    }
+    if (addr === 0xB80 || addr === 0xC80) {                             // cycleh / mcycleh high
+      this.cycle = (this.cycle % 0x100000000) + (v | 0) * 0x100000000;
+      return;
+    }
     if (addr === 0xB02 || addr === 0xC02) {                                  // instret: low half write
       this.instret = Math.floor(this.instret / 0x100000000) * 0x100000000 + (v >>> 0);
       this.suppressInstret = true;
@@ -483,7 +493,7 @@ class Cpu {
     }
     if (addr === 0xB82 || addr === 0xC82) {                              // instreth: high half write
       this.instret =
-        (this.instret - Math.floor(this.instret / 0x100000000) * 0x100000000) + (v | 0) * 0x100000000;
+        (this.instret % 0x100000000) + (v | 0) * 0x100000000;
       this.suppressInstret = true;
       return;
     }

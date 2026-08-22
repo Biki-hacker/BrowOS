@@ -54,12 +54,16 @@ class AnsiTerminal {
     this._initKeyboard();
     this._initMouse();
 
-    // Start cursor blink timer
-    if (typeof setInterval !== 'undefined') {
+    // Start cursor blink timer (only when canvas is attached, and unref in Node)
+    this.blinkInterval = null;
+    if (typeof setInterval !== 'undefined' && this.canvas) {
       this.blinkInterval = setInterval(() => {
         this.cursorVisible = !this.cursorVisible;
         this.render();
       }, 500);
+      if (this.blinkInterval && typeof this.blinkInterval.unref === 'function') {
+        this.blinkInterval.unref();
+      }
     }
   }
 
@@ -202,19 +206,45 @@ class AnsiTerminal {
       this.cursorX = Math.min(this.cols - 1, c);
     } else if (cmd === 'm') {
       // SGR Color codes
-      const codes = params.split(';').map((p) => parseInt(p, 10) || 0);
+      const codes = params.length === 0 ? [0] : params.split(';').map((p) => parseInt(p, 10) || 0);
       for (const code of codes) {
         if (code === 0) {
           this.currentFg = this.defaultFg;
           this.currentBg = this.defaultBg;
-        } else if (code === 30) this.currentFg = '#000000';
+        } else if (code === 30) this.currentFg = '#21222c';
         else if (code === 31) this.currentFg = '#ff5555';
         else if (code === 32) this.currentFg = '#50fa7b';
         else if (code === 33) this.currentFg = '#f1fa8c';
         else if (code === 34) this.currentFg = '#bd93f9';
         else if (code === 35) this.currentFg = '#ff79c6';
         else if (code === 36) this.currentFg = '#8be9fd';
-        else if (code === 37) this.currentFg = '#ffffff';
+        else if (code === 37) this.currentFg = '#f8f8f2';
+        else if (code === 39) this.currentFg = this.defaultFg;
+        else if (code === 40) this.currentBg = '#21222c';
+        else if (code === 41) this.currentBg = '#ff5555';
+        else if (code === 42) this.currentBg = '#50fa7b';
+        else if (code === 43) this.currentBg = '#f1fa8c';
+        else if (code === 44) this.currentBg = '#bd93f9';
+        else if (code === 45) this.currentBg = '#ff79c6';
+        else if (code === 46) this.currentBg = '#8be9fd';
+        else if (code === 47) this.currentBg = '#f8f8f2';
+        else if (code === 49) this.currentBg = this.defaultBg;
+        else if (code === 90) this.currentFg = '#6272a4';
+        else if (code === 91) this.currentFg = '#ff6e6e';
+        else if (code === 92) this.currentFg = '#69ff94';
+        else if (code === 93) this.currentFg = '#ffffa5';
+        else if (code === 94) this.currentFg = '#d6acff';
+        else if (code === 95) this.currentFg = '#ff92df';
+        else if (code === 96) this.currentFg = '#a4ffff';
+        else if (code === 97) this.currentFg = '#ffffff';
+        else if (code === 100) this.currentBg = '#6272a4';
+        else if (code === 101) this.currentBg = '#ff6e6e';
+        else if (code === 102) this.currentBg = '#69ff94';
+        else if (code === 103) this.currentBg = '#ffffa5';
+        else if (code === 104) this.currentBg = '#d6acff';
+        else if (code === 105) this.currentBg = '#ff92df';
+        else if (code === 106) this.currentBg = '#a4ffff';
+        else if (code === 107) this.currentBg = '#ffffff';
       }
     }
   }

@@ -3,8 +3,11 @@
 class Bus {
   constructor(size = 16 * 1024 * 1024, offset = 0) {
     this.data = new Uint8Array(size);
+    this.view = new DataView(this.data.buffer, this.data.byteOffset, this.data.byteLength);
     this.offset = offset;
     this.devices = [];
+    this.minDevAddr = 0xFFFFFFFF;
+    this.maxDevAddr = 0;
   }
 
   get size() {
@@ -12,7 +15,11 @@ class Bus {
   }
 
   mapDevice(base, size, io) {
-    this.devices.push({ base: base >>> 0, size, io });
+    const b = base >>> 0;
+    this.devices.push({ base: b, size, io });
+    if (b < this.minDevAddr) this.minDevAddr = b;
+    const end = (b + size) >>> 0;
+    if (end > this.maxDevAddr) this.maxDevAddr = end;
   }
 
   findDevice(addr, len) {
@@ -34,57 +41,63 @@ class Bus {
   }
 
   read8(addr) {
-    const d = this.findDevice(addr, 1);
-    if (d) return d.io.read8 ? d.io.read8(addr) : ((d.io.read32(addr & ~3) >>> ((addr & 3) * 8)) & 0xFF);
-    this.check(addr, 1);
-    return this.data[(addr >>> 0) - (this.offset >>> 0)];
+    const a = addr >>> 0;
+    if (this.devices.length !== 0 && a >= this.minDevAddr && a <= this.maxDevAddr) {
+      const d = this.findDevice(a, 1);
+      if (d) return d.io.read8 ? d.io.read8(a) : ((d.io.read32(a & ~3) >>> ((a & 3) * 8)) & 0xFF);
+    }
+    this.check(a, 1);
+    return this.data[a - (this.offset >>> 0)];
   }
 
   read16(addr) {
-    const dev = this.findDevice(addr, 2);
-    if (dev) return dev.io.read16 ? dev.io.read16(addr) : ((dev.io.read32(addr & ~3) >>> ((addr & 2) * 8)) & 0xFFFF);
-    this.check(addr, 2);
-    const d = this.data;
-    const p = (addr >>> 0) - (this.offset >>> 0);
-    return d[p] | (d[p + 1] << 8);
+    const a = addr >>> 0;
+    if (this.devices.length !== 0 && a >= this.minDevAddr && a <= this.maxDevAddr) {
+      const dev = this.findDevice(a, 2);
+      if (dev) return dev.io.read16 ? dev.io.read16(a) : ((dev.io.read32(a & ~3) >>> ((a & 2) * 8)) & 0xFFFF);
+    }
+    this.check(a, 2);
+    return this.view.getUint16(a - (this.offset >>> 0), true);
   }
 
   read32(addr) {
-    const d = this.findDevice(addr, 4);
-    if (d) return d.io.read32(addr) | 0;
-    this.check(addr, 4);
-    const b = this.data;
-    const p = (addr >>> 0) - (this.offset >>> 0);
-    return (b[p] | (b[p + 1] << 8) | (b[p + 2] << 16) | (b[p + 3] << 24)) | 0;
+    const a = addr >>> 0;
+    if (this.devices.length !== 0 && a >= this.minDevAddr && a <= this.maxDevAddr) {
+      const d = this.findDevice(a, 4);
+      if (d) return d.io.read32(a) | 0;
+    }
+    this.check(a, 4);
+    return this.view.getInt32(a - (this.offset >>> 0), true);
   }
 
   write8(addr, v) {
-    const d = this.findDevice(addr, 1);
-    if (d) { if (d.io.write8) d.io.write8(addr, v); return; }
-    this.check(addr, 1);
-    this.data[(addr >>> 0) - (this.offset >>> 0)] = v & 0xFF;
+    const a = addr >>> 0;
+    if (this.devices.length !== 0 && a >= this.minDevAddr && a <= this.maxDevAddr) {
+      const d = this.findDevice(a, 1);
+      if (d) { if (d.io.write8) d.io.write8(a, v); return; }
+    }
+    this.check(a, 1);
+    this.data[a - (this.offset >>> 0)] = v & 0xFF;
   }
 
   write16(addr, v) {
-    const dev = this.findDevice(addr, 2);
-    if (dev) { if (dev.io.write16) dev.io.write16(addr, v); return; }
-    this.check(addr, 2);
-    const d = this.data;
-    const p = (addr >>> 0) - (this.offset >>> 0);
-    d[p] = v & 0xFF;
-    d[p + 1] = (v >>> 8) & 0xFF;
+    const a = addr >>> 0;
+    if (this.devices.length !== 0 && a >= this.minDevAddr && a <= this.maxDevAddr) {
+      const dev = this.findDevice(a, 2);
+      if (dev) { if (dev.io.write16) dev.io.write16(a, v); return; }
+    }
+    this.check(a, 2);
+    this.view.setUint16(a - (this.offset >>> 0), v & 0xFFFF, true);
   }
 
   write32(addr, v) {
-    const d = this.findDevice(addr, 4);
-    if (d) { d.io.write32(addr, v | 0); return; }
-    this.check(addr, 4);
-    const b = this.data;
-    const p = (addr >>> 0) - (this.offset >>> 0);
-    b[p] = v & 0xFF;
-    b[p + 1] = (v >>> 8) & 0xFF;
-    b[p + 2] = (v >>> 16) & 0xFF;
-    b[p + 3] = (v >>> 24) & 0xFF;
+    const a = addr >>> 0;
+    if (this.devices.length !== 0 && a >= this.minDevAddr && a <= this.maxDevAddr) {
+      const d = this.findDevice(a, 4);
+      if (d) { d.io.write32(a, v | 0); return; }
+    }
+    this.check(a, 4);
+    this.view.setInt32(a - (this.offset >>> 0), v | 0, true);
   }
 
   load(addr, bytes) {

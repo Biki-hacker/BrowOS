@@ -453,3 +453,24 @@ test('run() is bounded and reports instruction count', () => {
   assert.strictEqual(s.halted, false);
   assert.strictEqual(cpu.x[2], 2);
 });
+
+test('CSR rdtime and time/timeh reflect CLINT timer values', () => {
+  const { cpu } = make('rdtime x10\nnop\n');
+  cpu.timer.mtimeLo = 12345;
+  cpu.timer.mtimeHi = 67;
+  cpu.step(); // tick() increments mtimeLo to 12346, then rdtime executes
+  assert.strictEqual(cpu.x[10], 12346);
+  assert.strictEqual(cpu.csrRead(0xC81), 67); // timeh
+});
+
+test('CSR cycleh and mcycleh read/write upper 32-bit counter', () => {
+  const { cpu } = make('nop\n');
+  cpu.cycle = 0x200000005; // 2 * 2^32 + 5
+  assert.strictEqual(cpu.csrRead(0xC00), 5); // cycle
+  assert.strictEqual(cpu.csrRead(0xC80), 2); // cycleh
+  assert.strictEqual(cpu.csrRead(0xB00), 5); // mcycle
+  assert.strictEqual(cpu.csrRead(0xB80), 2); // mcycleh
+  cpu.csrWrite(0xB80, 7);
+  assert.strictEqual(cpu.csrRead(0xC80), 7);
+  assert.strictEqual(cpu.csrRead(0xC00), 5);
+});

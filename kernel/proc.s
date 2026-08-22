@@ -121,11 +121,11 @@ proc_create:
   call alloc_frame
   mv s4, a0      # ustack_pa
 
-  # Map user stack at VA 0x7FFF0000 (User Data: R | W | U)
+  # Map user stack at VA USER_STACK_VA (User Data: R | W | U | A | D)
   mv a0, s3
-  li a1, 0x7FFF0000
+  li a1, USER_STACK_VA
   mv a2, s4
-  li a3, 0x17    # PTE_V | PTE_R | PTE_W | PTE_U
+  li a3, PTE_USER_DATA # 0xD7
   call vmm_map_page
 
   # Allocate user code physical page
@@ -144,11 +144,11 @@ proc_copy_ucode:
   addi t0, t0, 1
   blt t0, t1, proc_copy_ucode
 
-  # Map user code page at VA 0x40000000 (User Text: R | X | U)
+  # Map user code page at VA 0x40000000 (User Text: R | X | U | A | D)
   mv a0, s3
   li a1, 0x40000000
   mv a2, s4
-  li a3, 0x1B    # PTE_V | PTE_R | PTE_X | PTE_U
+  li a3, PTE_USER_TEXT # 0xDB
   call vmm_map_page
 
   # Initialize trapframe
@@ -231,7 +231,9 @@ sys_fork:
 
   # Set parent_pid
   lw t1, 4(s0)        # parent.pid
-  sw t1, 12(s1)       # child.parent_pid
+  sw t1, 8(s1)        # child.parent_pid (PCB_PPID = 8)
+  lw t2, 12(s0)       # parent.priority
+  sw t2, 12(s1)       # child.priority (PCB_PRIORITY = 12)
 
   # Create new address space for child
   call vmm_create_space
@@ -336,7 +338,7 @@ sys_wait_loop:
 sys_wait_scan:
   lw t5, 0(t0)        # pcb.state
   beqz t5, sys_wait_next
-  lw t6, 12(t0)       # pcb.parent_pid
+  lw t6, 8(t0)        # pcb.parent_pid (PCB_PPID = 8)
   bne t6, t1, sys_wait_next # not my child
 
   # If specific pid requested, check match
