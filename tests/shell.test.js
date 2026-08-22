@@ -48,7 +48,7 @@ function buildShell() {
   return assemble(libSrc + '\n' + shSrc, { base: 0x40000000 });
 }
 
-function runShellSession(inputCommands, maxSteps = 50000000) {
+function runShellSession(inputCommands, maxSteps = 50000000, onGpuPresent) {
   const shElf = buildShell();
   const diskBytes = formatDisk(2048, [
     { path: 'sh', content: shElf.bytes },
@@ -71,7 +71,11 @@ function runShellSession(inputCommands, maxSteps = 50000000) {
   blk.disk.set(diskBytes);
   blk.attach(bus);
 
-  const gpu = new BrowGpu(bus);
+  const gpu = new BrowGpu(bus, {
+    width: 320,
+    height: 240,
+    onPresent: onGpuPresent,
+  });
   gpu.attach(bus);
 
   const tohostAddr = elf.symbols['tohost'] ? elf.symbols['tohost'].value : null;
@@ -80,7 +84,7 @@ function runShellSession(inputCommands, maxSteps = 50000000) {
 
   let fed = false;
   const cpuTrace = (c, inst) => {
-    if (!fed && uart.output().includes('browos$ ')) {
+    if (!fed && uart.output().includes('$ ')) {
       fed = true;
       for (let i = 0; i < inputCommands.length; i++) {
         uart.pushRx(inputCommands.charCodeAt(i));
@@ -134,7 +138,7 @@ test('shell: echo, uname, and pwd commands execute interactively', { timeout: 30
 
 test('shell: mkdir, touch, cd, rmdir, and ls filesystem commands work in shell', { timeout: 300000 }, () => {
   const { output, tohost } = runShellSession('mkdir mydir\ntouch myfile\ncd mydir\npwd\ncd /\nrm myfile\nrmdir mydir\nls\nshutdown\n');
-  assert.ok(output.includes('browos$'), 'prompt must be displayed');
+  assert.ok(output.includes('browos:/'), 'prompt must show the working directory');
   assert.ok(output.includes('/mydir'), 'pwd must show navigated directory');
   assert.ok(output.includes('sh'), 'ls must list root directory contents');
   assert.equal(tohost, 1, 'shutdown command must write 1 to tohost');
@@ -149,8 +153,41 @@ test('shell: ps and kill command execute in shell', { timeout: 300000 }, () => {
 });
 
 test('shell: globe command dispatches 3D raytracing compute on BrowGPU', { timeout: 300000 }, () => {
-  const { output, tohost } = runShellSession('globe\nshutdown\n');
+  let presentCount = 0;
+  const { output, tohost } = runShellSession('globe\nshutdown\n', 50000000, () => {
+    presentCount++;
+  });
   assert.ok(output.includes('BrowGPU: Computing 3D Raytraced Earth Globe...'), 'must report compute start');
   assert.ok(output.includes('BrowGPU: Raytracing complete. Frame presented.'), 'must report frame presentation');
+  assert.equal(presentCount, 1, 'BrowGPU must present the rendered frame to the host');
   assert.equal(tohost, 1, 'shutdown command must exit');
 });
+
+test('shell: backspace protects prompt and erases only user typed input', { timeout: 300000 }, () => {
+  // Feed leading backspaces (which must not erase the prompt), then type "echo mytestXXX", backspace 3 times, type "123", Enter
+  const { output } = runShellSession('\b\b\b\becho mytestXXX\b\b\b123\nshutdown\n');
+  assert.ok(output.includes('mytest123'), 'echo output must reflect erased characters');
+  assert.ok(!output.includes('mytestXXX123'), 'erased characters must not be in final command output');
+  assert.ok(output.includes('browos:/$ '), 'prompt must remain intact');
+});
+
+test('shell: unknown commands produce error message and return cleanly to prompt', { timeout: 300000 }, () => {
+  const { output, tohost } = runShellSession('invalidcommand\necho after_unknown\nshutdown\n');
+  assert.ok(output.includes('sh: command not found: invalidcommand'), 'must report command not found');
+  assert.ok(output.includes('after_unknown'), 'shell must not get stuck and must continue executing commands');
+  assert.equal(tohost, 1, 'shutdown command must exit');
+});
+
+test('shell: globe command toggles on and off, stopping rendering when entered again', { timeout: 300000 }, () => {
+  let presentCount = 0;
+  const { output, tohost } = runShellSession('globe\nglobe\nshutdown\n', 50000000, () => {
+    presentCount++;
+  });
+  assert.ok(output.includes('BrowGPU: Computing 3D Raytraced Earth Globe...'), 'must start globe rendering on 1st call');
+  assert.ok(output.includes('BrowGPU: 3D Raytracer stopped. Frame cleared.'), 'must stop rendering on 2nd call');
+  assert.equal(presentCount, 2, 'BrowGPU must present rendered frame then cleared frame');
+  assert.equal(tohost, 1, 'shutdown command must exit');
+});
+
+
+

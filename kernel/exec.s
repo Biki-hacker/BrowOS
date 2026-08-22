@@ -241,10 +241,15 @@ sys_exec:
   mv s0, a0        # path_ptr
   mv s1, a1        # argv_ptr
 
-  # Lookup executable file in BrFS root (parent inode 0)
-  li a0, 0
+  # Get current process PCB
+  la t0, current_proc
+  lw t1, 0(t0)
+  beqz t1, sys_exec_notfound
+
+  # Resolve the executable path relative to the current working directory
+  lw a0, 40(t1)    # pcb.cwd
   mv a1, s0
-  call fs_lookup
+  call fs_resolve
   li t0, -1
   beq a0, t0, sys_exec_notfound
   mv s0, a0        # s0 = inode_no
@@ -259,6 +264,10 @@ sys_exec:
   mv a1, s1
   call elf_load
   bnez a0, sys_exec_err
+
+  # A successful exec discards the process's open file descriptors
+  mv a0, s1
+  call ofile_clear
 
   # Return 0 (execution resumes at new entrypoint via trap_return)
   li a0, 0

@@ -23,6 +23,9 @@
 .global kill
 .global waitpid
 .global gpu_dispatch
+.global chdir
+.global getcwd
+.global lseek
 
 exit:
   li a7, 1
@@ -111,6 +114,21 @@ waitpid:
 
 gpu_dispatch:
   li a7, 19
+  ecall
+  ret
+
+chdir:
+  li a7, 20
+  ecall
+  ret
+
+getcwd:
+  li a7, 21
+  ecall
+  ret
+
+lseek:
+  li a7, 22
   ecall
   ret
 
@@ -339,6 +357,8 @@ print_hex_done:
 
 # readline(a0=buf, a1=max_len): Reads line from stdin with echo.
 # Supports backspace (0x08 and 0x7F) and stops on newline ('\n' / '\r').
+# Rejects non-printable control characters (< 32, >= 127 except BS/DEL).
+# Bulletproof: Backspace will NEVER erase prompt or system text.
 # Returns length in a0.
 readline:
   addi sp, sp, -24
@@ -374,7 +394,13 @@ readline_loop:
   li t0, 127
   beq s3, t0, readline_bs
 
-  # Regular printable char
+  # Ignore any other control character (< 32 or >= 127)
+  li t0, 32
+  blt s3, t0, readline_loop
+  li t0, 127
+  bge s3, t0, readline_loop
+
+  # Regular printable char (32..126)
   addi t0, s1, -1
   bge s2, t0, readline_loop # buffer full, ignore
 
@@ -389,9 +415,9 @@ readline_loop:
   j readline_loop
 
 readline_bs:
-  beqz s2, readline_loop # nothing to erase
+  beqz s2, readline_loop # nothing to erase: protects prompt and prior system text!
   addi s2, s2, -1
-  # Erase on screen: \b \b
+  # Erase on screen: \b \b (BS, Space, BS)
   li a0, 8
   call putchar
   li a0, ' '
@@ -417,3 +443,4 @@ readline_eol:
   lw ra, 20(sp)
   addi sp, sp, 24
   ret
+

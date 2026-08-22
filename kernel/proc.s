@@ -6,7 +6,7 @@
 .global current_proc
 .global next_pid
 
-proc_table:   .zero 640  # 16 PCBs * 40 bytes
+proc_table:   .zero 704  # 16 PCBs * 44 bytes
 current_proc: .word 0
 next_pid:     .word 1
 
@@ -21,7 +21,7 @@ next_pid:     .word 1
 proc_init:
   la t0, proc_table
   li t1, 0
-  li t2, 160  # 640 bytes / 4 = 160 words
+  li t2, 176  # 704 bytes / 4 = 176 words
 proc_init_loop:
   sw x0, 0(t0)
   addi t0, t0, 4
@@ -49,7 +49,7 @@ proc_alloc:
 proc_alloc_search:
   lw t0, 0(s0)  # pcb.state (offset 0)
   beqz t0, proc_alloc_found
-  addi s0, s0, 40  # PCB_SIZE
+  addi s0, s0, 44  # PCB_SIZE
   addi s1, s1, 1
   li t1, 16        # MAX_PROCS
   blt s1, t1, proc_alloc_search
@@ -80,6 +80,8 @@ proc_alloc_found:
   li a0, 144
   call kmalloc
   sw a0, 28(s0)     # pcb.tf
+
+  sw x0, 40(s0)     # pcb.cwd = 0 (root)
 
   mv a0, s0
 
@@ -274,6 +276,15 @@ sys_fork:
   li a2, 144
   call kmemcpy
 
+  # Copy the parent's working directory to the child
+  lw t1, 40(s0)       # parent.cwd
+  sw t1, 40(s1)       # child.cwd
+
+  # Copy the parent's open file descriptors to the child
+  mv a0, s0
+  mv a1, s1
+  call ofile_copy
+
   # Child return value: child_tf.a0 = 0 (offset 40)
   lw t1, 28(s1)       # child.tf
   sw x0, 40(t1)
@@ -341,7 +352,7 @@ sys_wait_match:
   beq t5, a2, sys_wait_reap
 
 sys_wait_next:
-  addi t0, t0, 40     # PCB_SIZE
+  addi t0, t0, 44     # PCB_SIZE
   addi t2, t2, 1
   blt t2, t3, sys_wait_scan
 

@@ -60,6 +60,9 @@
 .equ SYS_KILL,     17
 .equ SYS_WAITPID,  18
 .equ SYS_GPU,      19
+.equ SYS_CHDIR,    20
+.equ SYS_GETCWD,   21
+.equ SYS_LSEEK,    22
 
 # Signal numbers
 .equ SIGINT,       2
@@ -188,4 +191,18 @@
 .equ PCB_TF,         28
 .equ PCB_EXITCODE,   32
 .equ PCB_SLEEPTICKS, 36
-.equ PCB_SIZE,       40
+.equ PCB_CWD,        40
+.equ PCB_SIZE,       44
+
+# Open-file table (per process)
+.equ OF_TYPE,    0
+.equ OF_INODE,   4
+.equ OF_OFFSET,  8
+.equ OF_FLAGS,   12
+.equ OF_SIZE,    16
+.equ MAX_OFILES, 16
+
+# open(2) flags
+.equ O_CREATE,  1
+.equ O_TRUNC,   2
+.equ O_APPEND,  4

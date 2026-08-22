@@ -122,6 +122,13 @@ class BrowOsApp {
 
     // Attach BrowGPU
     const gpuCanvas = document.getElementById('gpu-canvas');
+    if (gpuCanvas) {
+      const ctx = gpuCanvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#0a0e14';
+        ctx.fillRect(0, 0, gpuCanvas.width, gpuCanvas.height);
+      }
+    }
     this.gpu = new BrowGpu(this.bus, {
       width: 320,
       height: 240,
@@ -178,10 +185,21 @@ class BrowOsApp {
 
   reset() {
     if (window.BROWOS_KERNEL_ELF && window.BROWOS_DISK_IMG) {
-      if (this.terminal) this.terminal.clear();
+      if (this.terminal) this.terminal.clear(true);
+      const gpuCanvas = document.getElementById('gpu-canvas');
+      if (gpuCanvas) {
+        const ctx = gpuCanvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#0a0e14';
+          ctx.fillRect(0, 0, gpuCanvas.width, gpuCanvas.height);
+        }
+      }
+      const ledGpu = document.getElementById('led-gpu');
+      if (ledGpu) ledGpu.classList.remove('led-blue');
       this.boot(window.BROWOS_KERNEL_ELF, window.BROWOS_DISK_IMG);
     }
   }
+
 
   _loop() {
     if (!this.running || !this.cpu) return;

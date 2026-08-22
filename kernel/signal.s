@@ -107,7 +107,7 @@ sys_kill_scan:
   lw t4, 4(t0)        # pcb.pid
   beq t4, s0, sys_kill_found
 sys_kill_next:
-  addi t0, t0, 40     # PCB_SIZE
+  addi t0, t0, 44     # PCB_SIZE
   addi t1, t1, 1
   blt t1, t2, sys_kill_scan
 

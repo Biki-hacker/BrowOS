@@ -43,7 +43,7 @@ sched_wake_proc:
   sw t2, 0(s0)
 
 sched_sleep_next:
-  addi s0, s0, 40  # PCB_SIZE
+  addi s0, s0, 44  # PCB_SIZE
   addi t0, t0, 1
   blt t0, t1, sched_sleep_scan
 
@@ -74,7 +74,9 @@ sched_search_loop:
 
   slli t1, s0, 5   # s0 * 32
   slli t2, s0, 3   # s0 * 8
-  add t1, t1, t2   # s0 * 40 (PCB_SIZE)
+  add t1, t1, t2   # s0 * 40
+  slli t2, s0, 2   # s0 * 4
+  add t1, t1, t2   # s0 * 44 (PCB_SIZE)
   add t3, s1, t1   # target PCB address
 
   lw t4, 0(t3)     # pcb.state

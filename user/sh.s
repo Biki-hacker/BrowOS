@@ -8,18 +8,26 @@
 
 _start:
 sh_main:
-  # Initialize cwd path to "/"
-  la a0, sh_cwd_path
-  la a1, str_slash
-  call strcpy
-
   # Print welcome banner
   la a0, str_banner
   call puts
 
 sh_loop:
-  # Print prompt
-  la a0, str_prompt
+  # Print prompt: "browos:<cwd>$ "
+  la a0, str_prompt_pre
+  call print
+  la a0, sh_cwd_buf
+  li a1, 128
+  call getcwd
+  bltz a0, sh_prompt_fallback
+  la a0, sh_cwd_buf
+  call print
+  j sh_prompt_suffix
+sh_prompt_fallback:
+  la a0, str_slash
+  call print
+sh_prompt_suffix:
+  la a0, str_prompt_suf
   call print
 
   # Read command line
@@ -57,29 +65,28 @@ sh_try_ls:
   call strcmp
   bnez a0, sh_try_clear
 
-  # Open root directory "/" (inode 0)
-  la a0, str_slash
+  # Open the current directory "."
+  la a0, str_dot
   li a1, 0         # read-only
   call open
   li t0, -1
   beq a0, t0, sh_ls_err
   mv s1, a0        # s1 = fd
 
-  # Read directory block into cat_buf
+  # Read directory entries in 4096-byte chunks until EOF
+sh_ls_read:
   mv a0, s1
   la a1, cat_buf
-  li a2, 256
+  li a2, 4096
   call read
   mv s2, a0        # bytes read
-
-  # Close fd
-  mv a0, s1
-  call close
+  beqz s2, sh_ls_close
+  bltz s2, sh_ls_close
 
   # Scan 32-byte entries in cat_buf
   li s3, 0         # offset
 sh_ls_loop:
-  bge s3, s2, sh_ls_done
+  bge s3, s2, sh_ls_read
   la t0, cat_buf
   add t0, t0, s3
   lw t1, 0(t0)     # inode_no
@@ -108,6 +115,10 @@ sh_ls_print:
 sh_ls_next:
   addi s3, s3, 32
   j sh_ls_loop
+
+sh_ls_close:
+  mv a0, s1
+  call close
 
 sh_ls_done:
   la a0, str_newline
@@ -146,6 +157,10 @@ sh_try_cd:
   li a2, 2
   call strncmp
   bnez a0, sh_try_pwd
+  lbu t0, 2(s0)
+  beqz t0, sh_cd_root
+  li t1, ' '
+  bne t0, t1, sh_try_pwd
   addi a0, s0, 2
 sh_cd_sp:
   lbu t0, 0(a0)
@@ -154,57 +169,20 @@ sh_cd_sp:
   addi a0, a0, 1
   j sh_cd_sp
 sh_cd_do:
+  # Bare "cd" (or trailing spaces) changes to the root directory
   beqz t0, sh_cd_root
-  li t1, '/'
-  bne t0, t1, sh_cd_check_dot
-  lbu t2, 1(a0)
-  beqz t2, sh_cd_root
-sh_cd_check_dot:
-  # Check if ".." or "."
-  lbu t0, 0(a0)
-  li t1, '.'
-  bne t0, t1, sh_cd_lookup
-  lbu t2, 1(a0)
-  beqz t2, sh_loop  # "cd ." is a no-op
-  li t1, '.'
-  bne t2, t1, sh_cd_lookup
-  lbu t3, 2(a0)
-  beqz t3, sh_cd_root  # "cd .." goes up to root "/"
-
-sh_cd_lookup:
-  mv s1, a0            # s1 = dir path
-  la a1, stat_scratch
-  call stat
-  li t0, -1
-  beq a0, t0, sh_cd_err
-  la t0, stat_scratch
-  lw t1, 0(t0)         # stat.type
-  li t2, 2             # BRFS_INODE_DIR
-  bne t1, t2, sh_cd_not_dir
-  # Update cwd path string
-  lbu t0, 0(s1)
-  li t1, '/'
-  beq t0, t1, sh_cd_copy_abs
-  la a0, sh_cwd_path
-  li t0, '/'
-  sb t0, 0(a0)
+  li t1, ' '
+  bne t0, t1, sh_cd_call
   addi a0, a0, 1
-  mv a1, s1
-  call strcpy
-  j sh_loop
-sh_cd_copy_abs:
-  la a0, sh_cwd_path
-  mv a1, s1
-  call strcpy
+  j sh_cd_do
+sh_cd_call:
+  call chdir
+  bnez a0, sh_cd_err
   j sh_loop
 sh_cd_root:
-  la a0, sh_cwd_path
-  la a1, str_slash
-  call strcpy
-  j sh_loop
-sh_cd_not_dir:
-  la a0, str_cd_not_dir
-  call puts
+  la a0, str_slash
+  call chdir
+  bnez a0, sh_cd_err
   j sh_loop
 sh_cd_err:
   la a0, str_cd_err
@@ -217,7 +195,15 @@ sh_try_pwd:
   la a1, cmd_pwd
   call strcmp
   bnez a0, sh_try_uptime
-  la a0, sh_cwd_path
+  la a0, sh_cwd_buf
+  li a1, 128
+  call getcwd
+  bltz a0, sh_pwd_err
+  la a0, sh_cwd_buf
+  call puts
+  j sh_loop
+sh_pwd_err:
+  la a0, str_cd_err
   call puts
   j sh_loop
 
@@ -260,7 +246,10 @@ sh_try_echo:
   li a2, 4
   call strncmp
   bnez a0, sh_try_cat
-  # Skip "echo" and spaces
+  lbu t0, 4(s0)
+  beqz t0, sh_echo_empty
+  li t1, ' '
+  bne t0, t1, sh_try_cat
   addi a0, s0, 4
 sh_echo_sp:
   lbu t0, 0(a0)
@@ -268,6 +257,10 @@ sh_echo_sp:
   bne t0, t1, sh_echo_print
   addi a0, a0, 1
   j sh_echo_sp
+sh_echo_empty:
+  la a0, str_newline
+  call print
+  j sh_loop
 sh_echo_print:
   call puts
   j sh_loop
@@ -279,6 +272,10 @@ sh_try_cat:
   li a2, 3
   call strncmp
   bnez a0, sh_try_mkdir
+  lbu t0, 3(s0)
+  beqz t0, sh_cat_usage
+  li t1, ' '
+  bne t0, t1, sh_try_mkdir
   addi a0, s0, 3
 sh_cat_sp:
   lbu t0, 0(a0)
@@ -296,7 +293,7 @@ sh_cat_open:
   # Read file and display
   mv a0, s1
   la a1, cat_buf
-  li a2, 255
+  li a2, 4095
   call read
   la t0, cat_buf
   add t0, t0, a0
@@ -323,6 +320,10 @@ sh_try_mkdir:
   li a2, 5
   call strncmp
   bnez a0, sh_try_rmdir
+  lbu t0, 5(s0)
+  beqz t0, sh_mkdir_usage
+  li t1, ' '
+  bne t0, t1, sh_try_rmdir
   addi a0, s0, 5
 sh_mkdir_sp:
   lbu t0, 0(a0)
@@ -351,6 +352,10 @@ sh_try_rmdir:
   li a2, 5
   call strncmp
   bnez a0, sh_try_rm
+  lbu t0, 5(s0)
+  beqz t0, sh_rmdir_usage
+  li t1, ' '
+  bne t0, t1, sh_try_rm
   addi a0, s0, 5
 sh_rmdir_sp:
   lbu t0, 0(a0)
@@ -393,6 +398,10 @@ sh_try_rm:
   li a2, 2
   call strncmp
   bnez a0, sh_try_touch
+  lbu t0, 2(s0)
+  beqz t0, sh_rm_usage
+  li t1, ' '
+  bne t0, t1, sh_try_touch
   addi a0, s0, 2
 sh_rm_sp:
   lbu t0, 0(a0)
@@ -421,6 +430,10 @@ sh_try_touch:
   li a2, 5
   call strncmp
   bnez a0, sh_try_kill
+  lbu t0, 5(s0)
+  beqz t0, sh_touch_usage
+  li t1, ' '
+  bne t0, t1, sh_try_kill
   addi a0, s0, 5
 sh_touch_sp:
   lbu t0, 0(a0)
@@ -452,6 +465,10 @@ sh_try_kill:
   li a2, 4
   call strncmp
   bnez a0, sh_try_globe
+  lbu t0, 4(s0)
+  beqz t0, sh_kill_usage
+  li t1, ' '
+  bne t0, t1, sh_try_globe
   addi a0, s0, 4
 sh_kill_sp:
   lbu t0, 0(a0)
@@ -492,24 +509,62 @@ sh_kill_err:
   j sh_loop
 
 sh_try_globe:
-  # ─── Built-in: globe (3D BrowGPU Raytracer Demo) ──────────────────────
+  # ─── Built-in: globe (3D BrowGPU Raytracer Demo Toggle) ──────────────
   mv a0, s0
   la a1, cmd_globe
   call strcmp
   bnez a0, sh_try_halt
 
+  # Check if globe is already active
+  la t0, globe_active
+  lw t1, 0(t0)
+  bnez t1, sh_globe_stop
+
+  # Set globe_active = 1
+  li t1, 1
+  sw t1, 0(t0)
+
   la a0, str_globe_msg
   call puts
 
-  # Dispatch 3D Globe Raytracer Compute Kernel on BrowGPU
-  # gpu_dispatch(kernel_id=1, param1=160, param2=120, param3=80)
-  li a0, 1         # GPU_KERNEL_GLOBE
-  li a1, 160       # sphere_x (center)
-  li a2, 120       # sphere_y (center)
-  li a3, 80        # sphere_radius
+  # Dispatch raytraced 3D globe compute kernel (op 3, kernel_id=1, time=10)
+  li a0, 3           # GPU_OP_DISPATCH_COMPUTE
+  li a1, 1           # kernel_id = 1 (raytrace_globe)
+  li a2, 10          # time parameter
+  li a3, 0
   call gpu_dispatch
+  bnez a0, sh_globe_err
+
+  # Present the rendered framebuffer to the host canvas (op 4)
+  li a0, 4           # GPU_OP_PRESENT
+  call gpu_dispatch
+  bnez a0, sh_globe_err
 
   la a0, str_globe_done
+  call puts
+  j sh_loop
+
+sh_globe_stop:
+  # Set globe_active = 0
+  sw x0, 0(t0)
+
+  # Clear GPU framebuffer (op 1: clear color 0x00000000)
+  li a0, 1           # GPU_OP_CLEAR
+  li a1, 0           # color = 0
+  call gpu_dispatch
+  bnez a0, sh_globe_err
+
+  # Present cleared framebuffer (op 4)
+  li a0, 4           # GPU_OP_PRESENT
+  call gpu_dispatch
+  bnez a0, sh_globe_err
+
+  la a0, str_globe_stop
+  call puts
+  j sh_loop
+
+sh_globe_err:
+  la a0, str_globe_err
   call puts
   j sh_loop
 
@@ -550,8 +605,10 @@ sh_spin:
 .section .data
 str_banner:
   .asciz "Welcome to BrowOS 0.1.0 (RV32IM / Sv32)\nType 'help' for a list of available commands."
-str_prompt:      .asciz "browos$ "
+str_prompt_pre:  .asciz "browos:"
+str_prompt_suf:  .asciz "$ "
 str_slash:       .asciz "/"
+str_dot:         .asciz "."
 str_clear_seq:   .asciz "\x1b[2J\x1b[H"
 str_uname_text:  .asciz "BrowOS 0.1.0 rv32im (Sv32 MMU)"
 str_uptime_msg:  .asciz "up "
@@ -579,6 +636,8 @@ str_kill_usage:  .asciz "kill: missing pid argument"
 str_kill_err:    .asciz "kill: process not found"
 str_globe_msg:   .asciz "BrowGPU: Computing 3D Raytraced Earth Globe..."
 str_globe_done:  .asciz "BrowGPU: Raytracing complete. Frame presented."
+str_globe_stop:  .asciz "BrowGPU: 3D Raytracer stopped. Frame cleared."
+str_globe_err:   .asciz "BrowGPU: Hardware accelerator error."
 str_unknown:     .asciz "sh: command not found: "
 str_halt_msg:    .asciz "System shutting down..."
 
@@ -618,13 +677,14 @@ str_help_text:
   .ascii "  uname     - Print system information\n"
   .ascii "  ps        - Report current process status\n"
   .ascii "  kill      - Terminate a process by PID\n"
-  .ascii "  globe     - Compute and render 3D raytraced Earth on BrowGPU\n"
+  .ascii "  globe     - Toggle 3D raytraced Earth Globe on BrowGPU\n"
   .ascii "  uptime    - Show CPU cycle count\n"
   .asciz "  shutdown  - Halt and power off the machine"
 
 .section .bss
 .align 4
-sh_cwd_path:  .zero 128
+globe_active: .zero 4
+sh_cwd_buf:   .zero 128
 stat_scratch: .zero 32
 line_buf:     .zero 256
-cat_buf:      .zero 256
+cat_buf:      .zero 4096
